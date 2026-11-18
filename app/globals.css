@@ -1,26 +1,66 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* White-label: brand colours and fonts are runtime CSS variables set from Admin → Branding (see lib/brand.ts brandCss). */
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-head), ui-serif, Georgia, serif;
+  --color-brand-50: var(--brand-50, #fff4ed);
+  --color-brand-100: var(--brand-100, #ffe6d4);
+  --color-brand-200: var(--brand-200, #fec9a8);
+  --color-brand-300: var(--brand-300, #fda372);
+  --color-brand-400: var(--brand-400, #fb7a3c);
+  --color-brand-500: var(--brand-500, #f45d17);
+  --color-brand-600: var(--brand-600, #e5430d);
+  --color-brand-700: var(--brand-700, #be300d);
+  --color-brand-800: var(--brand-800, #972813);
+  --color-brand-900: var(--brand-900, #7a2413);
+  --animate-fade-in: fade-in 0.35s ease-out both;
+  --animate-slide-up: slide-up 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-slide-in-right: slide-in-right 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-slide-in-left: slide-in-left 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-marquee: marquee 28s linear infinite;
+  --animate-pop: pop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  --animate-spin360: spin360 6s linear infinite;
+  --animate-shimmer: shimmer 1.6s linear infinite;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes slide-up { from { opacity: 0; transform: translateY(16px) } to { opacity: 1; transform: none } }
+@keyframes slide-in-right { from { transform: translateX(100%) } to { transform: none } }
+@keyframes slide-in-left { from { transform: translateX(-100%) } to { transform: none } }
+@keyframes marquee { from { transform: translateX(0) } to { transform: translateX(-50%) } }
+@keyframes pop { 0% { transform: scale(0.4); opacity: 0 } 100% { transform: scale(1); opacity: 1 } }
+@keyframes spin360 { from { transform: perspective(900px) rotateY(0) } to { transform: perspective(900px) rotateY(360deg) } }
+@keyframes shimmer { from { background-position: -200% 0 } to { background-position: 200% 0 } }
+@keyframes draw { to { stroke-dashoffset: 0 } }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+:root { color-scheme: light; }
+.dark { color-scheme: dark; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  @apply bg-white text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
+}
+
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+.check-draw { stroke-dasharray: 60; stroke-dashoffset: 60; animation: draw 0.6s 0.35s ease-out forwards; }
+
+@utility btn { @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50; }
+@utility btn-primary { @apply btn bg-zinc-900 text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200; }
+@utility btn-brand { @apply btn bg-brand-500 text-white hover:bg-brand-600; }
+@utility btn-ghost { @apply btn border border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800; }
+@utility input { @apply w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2.5 text-sm outline-none transition focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-300; }
+@utility label { @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-zinc-500; }
+@utility card { @apply rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900; }
+@utility chip { @apply inline-flex items-center gap-1 rounded-full border border-zinc-300 px-3 py-1.5 text-sm transition hover:border-zinc-900 dark:border-zinc-700 dark:hover:border-zinc-300; }
+@utility chip-on { @apply border-zinc-900 bg-zinc-900 text-white dark:border-white dark:bg-white dark:text-zinc-900; }
+@utility badge { @apply inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold; }
+@utility skeleton { @apply rounded-xl bg-[linear-gradient(90deg,#f4f4f5_25%,#e4e4e7_50%,#f4f4f5_75%)] bg-[length:200%_100%] animate-shimmer dark:bg-[linear-gradient(90deg,#18181b_25%,#27272a_50%,#18181b_75%)]; }
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white !important; color: black !important; }
 }

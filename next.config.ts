@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // review photos + product image uploads go through server actions
+  experimental: { serverActions: { bodySizeLimit: "12mb" } },
 };
 
 export default nextConfig;
