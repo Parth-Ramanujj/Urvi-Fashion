@@ -1,6 +1,11 @@
-import { hashPassword, newId } from "./crypto.ts";
+import { hashPassword, newId as randomId } from "./crypto.ts";
+
+// Seed IDs are deterministic so every server instance (e.g. several Vercel functions, each with its own /tmp)
+// builds the identical store: a login or link made on one instance resolves on the others.
+let idc = 0;
+const newId = (n = 9) => `s${(++idc).toString(36).padStart(n - 1, "0")}`;
 import { computeTotals } from "./pricing.ts";
-import { creditCoins, DEFAULT_DELIVERY, DEFAULT_RETENTION, newReferralCode } from "./retention-core.ts";
+import { creditCoins, DEFAULT_DELIVERY, DEFAULT_RETENTION } from "./retention-core.ts";
 import type { ArtKind, Banner, Category, Coupon, DB, Order, OrderStatus, Product, Review, Size, User } from "./types";
 import { FLOW, SIZES } from "./types.ts";
 import { blankBrand, palette } from "./brand.ts";
@@ -96,6 +101,7 @@ const REVIEWS: [number, string, string][] = [
 
 export function buildSeed(): DB {
   s = 42;
+  idc = 0;
   const now = Date.now();
   const products = ROWS.map((r, i) => product(r, i, now));
   const mkUser = (name: string, extra: Partial<User>): User => ({
@@ -166,7 +172,7 @@ export function buildSeed(): DB {
   ];
   const users = [admin, demo, ...riders, ...customers];
   const d = { users, orders, coinLedger: [], retention: structuredClone(DEFAULT_RETENTION) } as unknown as DB;
-  for (const u of users) { u.coins = 0; u.referralCode = newReferralCode(u.name); }
+  users.forEach((u, i) => { u.coins = 0; u.referralCode = `${(u.name.replace(/[^a-z]/gi, "").slice(0, 5) || "TH").toUpperCase()}${(4096 + i * 37).toString(16).toUpperCase()}`; });
   creditCoins(d, demo, DEFAULT_RETENTION.loyalty.welcomeCoins, "Welcome bonus");
   for (const o of [...orders].sort((a, b) => a.createdAt - b.createdAt)) {
     const u = users.find((x) => x.id === o.userId)!;
@@ -193,7 +199,7 @@ export function buildSeed(): DB {
   return {
     version: 1, users, products, orders, reviews, coupons, banners, retention: d.retention, coinLedger: d.coinLedger, waitlist, memberships, delivery: structuredClone(DEFAULT_DELIVERY),
     notifications: [{ id: newId(), userId: null, title: "Welcome to Threadly 👋", body: "Use WELCOME10 for 10% off your first order.", href: "/shop", createdAt: now - DAY, readBy: [] }],
-    campaigns: [], otps: [], secret: newId(32),
+    campaigns: [], otps: [], secret: randomId(32),
     tickets: [{ id: newId(), userId: demo.id, subject: "Exchange size for my hoodie", orderRef: orders[0].ref, status: "open", messages: [{ from: "customer", body: "Hi, can I exchange my hoodie for a size L?", at: now - 2 * 3_600_000 }], createdAt: now - 2 * 3_600_000 }],
   };
 }
@@ -203,18 +209,19 @@ export function buildSeed(): DB {
  * The owner's admin login comes from ADMIN_EMAIL / ADMIN_PASSWORD; the store name from STORE_NAME.
  */
 export function buildBlankSeed(env: Record<string, string | undefined> = process.env): DB {
+  idc = 0;
   const email = (env.ADMIN_EMAIL ?? "").trim().toLowerCase();
   const password = env.ADMIN_PASSWORD ?? "";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("DEMO_DATA=false needs ADMIN_EMAIL set to the store owner's email (see .env.example)");
   if (password.length < 8 || !/\d/.test(password) || !/[a-z]/i.test(password)) throw new Error("DEMO_DATA=false needs ADMIN_PASSWORD with 8+ characters, letters and numbers");
   const name = (env.STORE_NAME ?? "My Store").trim().slice(0, 40) || "My Store";
   const now = Date.now();
-  const admin: User = { id: newId(), name: "Store Owner", email, passwordHash: hashPassword(password), role: "admin", blocked: false, addresses: [], measurements: {}, createdAt: now, lastActiveAt: now, coins: 0, referralCode: newReferralCode(name) };
+  const admin: User = { id: newId(), name: "Store Owner", email, passwordHash: hashPassword(password), role: "admin", blocked: false, addresses: [], measurements: {}, createdAt: now, lastActiveAt: now, coins: 0, referralCode: `${(name.replace(/[^a-z]/gi, "").slice(0, 5) || "TH").toUpperCase()}1000` };
   const brand = blankBrand(name);
   const p = palette(brand.primary);
   return {
     version: 1, users: [admin], products: [], orders: [], reviews: [], coupons: [], notifications: [], campaigns: [], tickets: [], otps: [],
-    secret: newId(32), coinLedger: [], waitlist: [], memberships: [],
+    secret: randomId(32), coinLedger: [], waitlist: [], memberships: [],
     retention: structuredClone(DEFAULT_RETENTION), delivery: { ...structuredClone(DEFAULT_DELIVERY), cities: [] }, brand,
     banners: [{ id: "welcome", eyebrow: "Welcome", title: `Welcome to\n${name}`, subtitle: brand.tagline, cta: "Shop now", href: "/shop", from: p[700], to: p[500], art: { kind: "tee", hex: "#f3f2ec" }, active: true }],
   };

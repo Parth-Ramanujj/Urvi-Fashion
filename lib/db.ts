@@ -8,7 +8,9 @@ import type { DB } from "./types";
 // shortcut: single-process JSON document store (sync writes, atomic rename). Swap this module for Postgres/Prisma
 // when running more than one server instance; every read/write in the app goes through db()/mutate().
 // DATA_DIR lets one codebase run several white-label stores side by side, each with its own data folder.
-const DIR = path.resolve(process.env.DATA_DIR || path.join(process.cwd(), "data"));
+// On Vercel only /tmp is writable. Good for demos/testing only: /tmp is wiped on cold starts and isn't shared
+// between instances, so new sign-ups/orders can vanish. Use a host with a persistent disk for a real store.
+const DIR = path.resolve(process.env.DATA_DIR || (process.env.VERCEL ? "/tmp/store-data" : path.join(process.cwd(), "data")));
 const FILE = path.join(DIR, "db.json");
 const g = globalThis as unknown as { __db?: DB };
 

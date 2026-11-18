@@ -5,7 +5,7 @@ import { recommendSize } from "../lib/sizes.ts";
 import { DEFAULT_DELIVERY, DEFAULT_RETENTION as R, maxRedeemable, tierOf } from "../lib/retention-core.ts";
 import { deliveryFor } from "../lib/delivery.ts";
 import { brandCss, palette } from "../lib/brand.ts";
-import { buildBlankSeed } from "../lib/seed.ts";
+import { buildBlankSeed, buildSeed } from "../lib/seed.ts";
 
 const lines = [{ price: 500, mrp: 1000, qty: 2 }];
 let t = computeTotals(lines, "standard");
@@ -57,4 +57,9 @@ assert.throws(() => buildBlankSeed({}), /ADMIN_EMAIL/);
 assert.throws(() => buildBlankSeed({ ADMIN_EMAIL: "o@shop.in", ADMIN_PASSWORD: "short" }), /ADMIN_PASSWORD/);
 const blank = buildBlankSeed({ ADMIN_EMAIL: "Owner@Shop.in", ADMIN_PASSWORD: "Secret123", STORE_NAME: "Kapda Ghar" });
 assert.deepEqual([blank.users.length, blank.users[0].email, blank.products.length, blank.orders.length, blank.brand!.name, blank.brand!.orderPrefix, blank.brand!.showDemoLogins], [1, "owner@shop.in", 0, 0, "Kapda Ghar", "KAP", false]);
+// Two server instances must build the same demo store (same user/order ids, referral codes) but never share the signing secret.
+const a = buildSeed(), b = buildSeed();
+assert.deepEqual(a.users.map((u) => [u.id, u.email, u.referralCode]), b.users.map((u) => [u.id, u.email, u.referralCode]));
+assert.deepEqual(a.orders.map((o) => o.id), b.orders.map((o) => o.id));
+assert.notEqual(a.secret, b.secret);
 console.log("selfcheck: all passed");

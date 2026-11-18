@@ -47,6 +47,11 @@ Coupons: `WELCOME10`, `STYLE20`, `FLAT500` (and `MONSOON15`, which has expired).
 
 Product images: seed products use built-in vector art (`components/ProductArt.tsx`) that recolours with each swatch. Photos uploaded in admin replace it per colour.
 
+## Deploying
+
+- **Vercel (demo/testing only).** It works out of the box: the store keeps its data in Vercel's temporary `/tmp` folder. Set **`SESSION_SECRET`** in Vercel → Settings → Environment Variables, or logins will randomly drop between Vercel's servers. That data is **wiped on every cold start and not shared between Vercel's servers**, so new sign-ups, orders, uploads and admin changes can disappear. Fine for showing the demo, not for real customers.
+- **Real store.** Use a host with a persistent disk (Railway or Render with a volume, or a VPS) and point `DATA_DIR` at that disk.
+
 ## White-label: run it as any brand
 
 Nothing about "Threadly" is hard-coded. The demo just ships with Threadly as its default brand.
