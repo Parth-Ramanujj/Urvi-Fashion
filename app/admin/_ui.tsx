@@ -51,7 +51,7 @@ export function AdminBottomNav() {
       {more && (
         <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="More admin pages">
           <div className="absolute inset-0 animate-fade-in bg-black/40" onClick={() => setMore(false)} />
-          <div className="absolute inset-x-0 bottom-0 animate-slide-up rounded-t-3xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] dark:bg-zinc-900">
+          <div onClick={(e) => (e.target as HTMLElement).closest("a") && setMore(false)} className="absolute inset-x-0 bottom-0 animate-slide-up rounded-t-3xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] dark:bg-zinc-900">
             <div className="mb-3 flex items-center justify-between"><p className="font-semibold">More</p><button onClick={() => setMore(false)} aria-label="Close" className="rounded-full p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800"><X className="size-5" /></button></div>
             <div className="grid grid-cols-3 gap-2">
               {[...rest, ["/", "View store", Store] as const].map(([href, label, Icon]) => (

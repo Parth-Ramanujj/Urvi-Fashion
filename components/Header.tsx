@@ -124,7 +124,8 @@ export default function Header() {
       {drawer && (
         <div className="fixed inset-0 z-[60] md:hidden" role="dialog" aria-modal="true" aria-label="Menu">
           <div className="absolute inset-0 animate-fade-in bg-black/40" onClick={() => setDrawer(false)} />
-          <aside className="absolute inset-y-0 left-0 flex w-[85%] max-w-xs animate-slide-in-left flex-col overflow-y-auto bg-white dark:bg-zinc-950">
+          {/* Any tap on a link or option closes the menu (path-change alone misses same-page links like category filters). */}
+          <aside onClick={(e) => (e.target as HTMLElement).closest("a, button") && setDrawer(false)} className="absolute inset-y-0 left-0 flex w-[85%] max-w-xs animate-slide-in-left flex-col overflow-y-auto bg-white dark:bg-zinc-950">
             <div className="bg-gradient-to-br from-brand-500 to-brand-700 p-5 text-white">
               <button onClick={() => setDrawer(false)} className="float-right rounded-full p-1 hover:bg-white/20" aria-label="Close menu"><X className="size-5" /></button>
               <span className="grid size-12 place-items-center rounded-full bg-white/20 text-lg font-bold">{user ? user.name[0]?.toUpperCase() : <User className="size-6" />}</span>
