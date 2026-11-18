@@ -31,6 +31,11 @@ export interface Brand {
   coinName: string;
   /** Show the demo login hints on the login page (turn off for real stores). */
   showDemoLogins: boolean;
+  /**
+   * Android app built from this site (PWABuilder/Bubblewrap). Served as /.well-known/assetlinks.json so Android
+   * trusts the app and opens it full-screen instead of showing a URL bar.
+   */
+  android: { packageName: string; sha256: string[] };
 }
 
 export const DEFAULT_BRAND: Brand = {
@@ -50,6 +55,7 @@ export const DEFAULT_BRAND: Brand = {
   membershipName: "Plus",
   coinName: "coins",
   showDemoLogins: true,
+  android: { packageName: "", sha256: [] },
 };
 
 /** Brand for a fresh (non-demo) store: neutral copy, name from setup. */

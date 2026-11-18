@@ -36,6 +36,13 @@ export async function saveBrand(form: FormData) {
     const orderPrefix = str(b.orderPrefix, 4).toUpperCase();
     if (!/^[A-Z]{2,4}$/.test(orderPrefix)) fail("Order prefix must be 2–4 letters");
 
+    const packageName = str(b.android?.packageName, 150);
+    if (packageName && !/^[a-zA-Z][\w]*(\.[a-zA-Z][\w]*)+$/.test(packageName)) fail("Android package name looks wrong (e.g. app.vercel.clothing_psi_six.twa)");
+    const sha256 = (Array.isArray(b.android?.sha256) ? b.android!.sha256 : []).map((f) => str(f, 120).toUpperCase().replace(/[^0-9A-F]/g, "")).filter(Boolean);
+    if (sha256.length > 5) fail("Add at most 5 signing fingerprints");
+    if (sha256.some((f) => f.length !== 64)) fail("Each SHA-256 fingerprint must be 64 hex characters (colons optional)");
+    if (packageName && !sha256.length) fail("Add the app's SHA-256 signing fingerprint too");
+
     const next: Omit<Brand, "logo" | "icon"> = {
       name: text(b.name, "Store name", 40, 2),
       shortName: text(b.shortName, "Short name", 12, 1),
@@ -51,6 +58,7 @@ export async function saveBrand(form: FormData) {
       membershipName: text(b.membershipName, "Membership name", 20, 1),
       coinName: text(b.coinName, "Coin name", 20, 1),
       showDemoLogins: !!b.showDemoLogins,
+      android: { packageName, sha256: sha256.map((f) => f.match(/../g)!.join(":")) },
     };
     const iconFile = form.get("icon");
     // The app-icon renderer (app/icons/[size]) supports PNG and JPEG only.

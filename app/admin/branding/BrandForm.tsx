@@ -149,6 +149,15 @@ export default function BrandForm({ initial }: { initial: Brand }) {
           </div>
         </Section>
 
+        <Section title="Android app (APK / Play Store)">
+          <p className="text-sm text-zinc-500">Built an Android app from this site with PWABuilder or Bubblewrap? Paste its package name and signing fingerprint here. Android then opens it full-screen with no URL bar at the top. Both values are in the PWABuilder download (<code>assetlinks.json</code> / signing key info).</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Package name" hint="e.g. app.vercel.clothing_psi_six.twa"><input className="input font-mono" value={b.android.packageName} maxLength={150} onChange={(e) => set("android", { ...b.android, packageName: e.target.value.trim() })} /></Field>
+            <Field label="SHA-256 signing fingerprint(s)" hint="One per line. Add the Play Store app-signing key too if you publish there."><textarea className="input font-mono text-xs" rows={3} value={b.android.sha256.join("\n")} onChange={(e) => set("android", { ...b.android, sha256: e.target.value.split(/\n+/) })} /></Field>
+          </div>
+          {b.android.packageName && <p className="text-xs text-zinc-500">Served at <code>/.well-known/assetlinks.json</code> once saved.</p>}
+        </Section>
+
         <Section title="Demo mode">
           <Toggle label="Show demo login hints on the login page" on={b.showDemoLogins} onChange={(v) => set("showDemoLogins", v)} />
           {b.showDemoLogins && <p className="flex gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300"><AlertTriangle className="size-4 shrink-0" />Turn this off for a real store — it shows demo account passwords to every visitor.</p>}

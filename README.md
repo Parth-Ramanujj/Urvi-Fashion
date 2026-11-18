@@ -51,6 +51,9 @@ Product images: seed products use built-in vector art (`components/ProductArt.ts
 
 - **Vercel (demo/testing only).** It works out of the box: the store keeps its data in Vercel's temporary `/tmp` folder. Set **`SESSION_SECRET`** in Vercel → Settings → Environment Variables, or logins will randomly drop between Vercel's servers. That data is **wiped on every cold start and not shared between Vercel's servers**, so new sign-ups, orders, uploads and admin changes can disappear. Fine for showing the demo, not for real customers.
 - **Real store.** Use a host with a persistent disk (Railway or Render with a volume, or a VPS) and point `DATA_DIR` at that disk.
+- **Android app without the URL bar.** If the app opens with a bar showing the site name and URL at the top:
+  - **Installed from Chrome:** remove it from the home screen, open the site in Chrome, and tap **Install app** again. Chrome only makes a real full-screen app when the site works at install time.
+  - **Built as an APK (PWABuilder/Bubblewrap):** enter the package name and SHA-256 signing fingerprint in **Admin → Branding → Android app**. The site then serves `/.well-known/assetlinks.json` and Android opens the APK full-screen. If you publish on Play Store, also add Play's app-signing fingerprint (Play Console → App integrity).
 
 ## White-label: run it as any brand
 
