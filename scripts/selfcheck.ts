@@ -6,7 +6,7 @@ import { DEFAULT_DELIVERY, DEFAULT_RETENTION as R, maxRedeemable, tierOf } from 
 import { deliveryFor } from "../lib/delivery.ts";
 import { brandCss, palette } from "../lib/brand.ts";
 import { buildBlankSeed, buildSeed } from "../lib/seed.ts";
-import { diff, fromSnapshot, snapshotOf, toRows } from "../lib/store-diff.ts";
+import { diff, fromSnapshot, snapshotOf, toRows, writePlan } from "../lib/store-diff.ts";
 
 const lines = [{ price: 500, mrp: 1000, qty: 2 }];
 let t = computeTotals(lines, "standard");
@@ -85,5 +85,14 @@ assert.notEqual(a.secret, b.secret);
   assert.deepEqual([back.banners.map((b) => b.id), back.products[0].name, back.secret, back.brand?.name], [d.banners.map((b) => b.id), "Edited", d.secret, d.brand?.name]);
   d.users.push({ ...d.users[1] }); // same id twice must never reach MySQL
   assert.throws(() => diff(r.next, d), /Duplicate key/);
+}
+// Foreign-key-safe write order: parents inserted before children, children deleted before parents.
+{
+  const row = { id: "x", pos: 0, json: "{}" };
+  const plan = writePlan([
+    { table: "reviews", upserts: [row], deletes: ["r1"] }, { table: "products", upserts: [row], deletes: ["p1"] },
+    { table: "users", upserts: [row], deletes: [] }, { table: "coin_ledger", upserts: [], deletes: ["c1"] }, { table: "orders", upserts: [row], deletes: [] },
+  ]).map((s) => `${s.op}:${s.table}`);
+  assert.deepEqual(plan, ["upsert:users", "upsert:products", "upsert:orders", "upsert:reviews", "delete:coin_ledger", "delete:reviews", "delete:products"]);
 }
 console.log("selfcheck: all passed");

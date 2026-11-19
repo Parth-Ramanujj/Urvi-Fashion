@@ -57,6 +57,27 @@ DATABASE_URL=mysql://root:@127.0.0.1:3306/clothing
 
 - **Setup is automatic.** On the first start the `clothing` database and all tables are created, and your existing `data/db.json` is imported once (or demo/blank data is seeded if there's no file). Nothing to run by hand.
 - **Tables:** `users`, `products`, `orders`, `reviews`, `coupons`, `banners`, `notifications`, `campaigns`, `tickets`, `otps`, `coin_ledger`, `waitlist`, `memberships` (one row per record, full record in a `data` JSON column), plus `settings` (brand, retention, delivery) and `store_meta` (change counter). Handy columns are extracted and indexed for phpMyAdmin and reports: users `email` (unique), `phone`, `role`; products `slug` (unique), `name`; orders `ref` (unique), `user_id`, `status`, `total`, `created_at`.
+- **Relationships (real foreign keys, `ON DELETE RESTRICT`).** MySQL itself rejects orphan data and refuses to delete a record that others still point at:
+
+```mermaid
+erDiagram
+  users ||--o{ orders : "places (user_id)"
+  users ||--o{ orders : "delivers (delivery_partner_id)"
+  users ||--o{ users : "referred (referred_by)"
+  users ||--o{ reviews : writes
+  products ||--o{ reviews : has
+  users ||--o{ waitlist : "waits for"
+  products ||--o{ waitlist : "back-in-stock alerts"
+  users ||--o{ memberships : buys
+  users ||--o{ tickets : opens
+  users ||--o{ coin_ledger : earns
+  orders ||--o{ coin_ledger : "coins for"
+  users ||--o{ notifications : "receives (NULL = everyone)"
+```
+
+- **Reporting views**, queryable like tables in phpMyAdmin: `v_order_items` (one row per order line), `v_product_variants` (stock per SKU), `v_low_stock`, `v_customer_summary` (orders, spend, last order per customer) and `v_daily_sales`.
+- **Versioned migrations.** Schema changes live in `lib/db-schema.ts` and run automatically at startup, one server at a time. They upgrade existing databases in place and are recorded in `schema_migrations`.
+- **Admin → Database** shows the server, every table with rows and size, each relationship with its foreign key and an orphan check, whether the app is in sync, applied migrations, and a weak-password warning. It also has a **full backup download** (JSON). Restore it by putting the file at `DATA_DIR/db.json` and starting on an empty database.
 - **Safe with many servers.** Every save is one transaction holding a row lock, so concurrent writes from several app servers or admins are applied one after another, never overwritten; only changed rows are written. Other servers pick up changes within 3 seconds for reads, and immediately before their own writes.
 - **Production user.** Don't use `root` in production. Create a dedicated user:
 
@@ -68,7 +89,7 @@ GRANT ALL ON clothing.* TO 'clothing'@'%';
 - **Backups:**
 
 ```bash
-mysqldump -u clothing -p clothing > backup.sql
+mysqldump --single-transaction -u clothing -p clothing > backup.sql
 ```
 
   Also back up `DATA_DIR/uploads` (product, review and logo images are stored as files).

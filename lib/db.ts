@@ -4,7 +4,8 @@ import path from "node:path";
 import mysql from "mysql2/promise";
 import { migrate, processWaitlist } from "./retention-core";
 import { buildBlankSeed, buildSeed } from "./seed";
-import { COLLECTIONS, diff, fromRows, fromSnapshot, snapshotOf, toRows, type Change, type Snapshot } from "./store-diff";
+import { runMigrations, TABLES } from "./db-schema";
+import { diff, fromRows, fromSnapshot, snapshotOf, toRows, writePlan, type Change, type Snapshot } from "./store-diff";
 import type { DB } from "./types";
 
 /*
@@ -40,17 +41,6 @@ function loadFile() {
 }
 
 /* ---------------- MySQL mode ---------------- */
-const TABLE_EXTRA: Record<string, string> = {
-  // Readable/indexed columns for phpMyAdmin and reporting, derived from the JSON so they can never drift.
-  users: `, email VARCHAR(190) AS (JSON_UNQUOTE(JSON_EXTRACT(data, '$.email'))) STORED, phone VARCHAR(20) AS (JSON_UNQUOTE(JSON_EXTRACT(data, '$.phone'))) STORED,
-    role VARCHAR(20) AS (JSON_UNQUOTE(JSON_EXTRACT(data, '$.role'))) STORED, UNIQUE KEY uq_users_email (email), KEY ix_users_phone (phone)`,
-  products: `, slug VARCHAR(190) AS (JSON_UNQUOTE(JSON_EXTRACT(data, '$.slug'))) STORED, name VARCHAR(190) AS (JSON_UNQUOTE(JSON_EXTRACT(data, '$.name'))) STORED, UNIQUE KEY uq_products_slug (slug)`,
-  orders: `, ref VARCHAR(40) AS (JSON_UNQUOTE(JSON_EXTRACT(data, '$.ref'))) STORED, user_id VARCHAR(64) AS (JSON_UNQUOTE(JSON_EXTRACT(data, '$.userId'))) STORED,
-    status VARCHAR(30) AS (JSON_UNQUOTE(JSON_EXTRACT(data, '$.status'))) STORED, total DECIMAL(12,2) AS (JSON_EXTRACT(data, '$.totals.total')) STORED,
-    created_at BIGINT AS (JSON_EXTRACT(data, '$.createdAt')) STORED, UNIQUE KEY uq_orders_ref (ref), KEY ix_orders_user (user_id), KEY ix_orders_status (status)`,
-};
-const TABLES = [...Object.values(COLLECTIONS).map(([t]) => t), "settings"];
-
 function dbName() {
   const name = new URL(process.env.DATABASE_URL!).pathname.slice(1);
   if (!/^\w{1,64}$/.test(name)) throw new Error("DATABASE_URL must end with a database name, e.g. mysql://root:@127.0.0.1:3306/clothing");
@@ -65,12 +55,7 @@ async function createSchema() {
   try { await admin.query(`CREATE DATABASE IF NOT EXISTS \`${name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`); } finally { await admin.end(); }
   const pool = mysql.createPool({ uri: process.env.DATABASE_URL, charset: "utf8mb4", connectionLimit: Number(process.env.DB_POOL_SIZE) || 10, waitForConnections: true, enableKeepAlive: true });
   pool.pool.on("connection", (c) => c.query("SET SESSION sql_mode = 'STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION'"));
-  await pool.query("CREATE TABLE IF NOT EXISTS store_meta (id TINYINT PRIMARY KEY, version BIGINT NOT NULL) ENGINE=InnoDB");
-  await pool.query("INSERT IGNORE INTO store_meta (id, version) VALUES (1, 0)");
-  for (const t of TABLES) {
-    await pool.query(`CREATE TABLE IF NOT EXISTS \`${t}\` (id VARCHAR(190) NOT NULL PRIMARY KEY, pos INT NOT NULL, data JSON NOT NULL${TABLE_EXTRA[t] ?? ""}, KEY ix_${t}_pos (pos))
-      ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
-  }
+  await runMigrations(pool); // tables, relationship columns, foreign keys, views
   return pool;
 }
 
@@ -92,12 +77,14 @@ async function loadSql(q: Q) {
 }
 
 async function writeChanges(q: Q, changes: Change[]) {
-  for (const { table, upserts, deletes } of changes) {
-    for (let i = 0; i < upserts.length; i += 200) {
-      const chunk = upserts.slice(i, i + 200);
-      await q.query(`INSERT INTO \`${table}\` (id, pos, data) VALUES ? ON DUPLICATE KEY UPDATE pos = VALUES(pos), data = VALUES(data)`, [chunk.map((r) => [r.id, r.pos, r.json])]);
+  for (const step of writePlan(changes)) { // parents before children for inserts, the reverse for deletes (foreign keys)
+    if (step.op === "upsert") {
+      for (let i = 0; i < step.rows.length; i += 200) {
+        await q.query(`INSERT INTO \`${step.table}\` (id, pos, data) VALUES ? ON DUPLICATE KEY UPDATE pos = VALUES(pos), data = VALUES(data)`, [step.rows.slice(i, i + 200).map((r) => [r.id, r.pos, r.json])]);
+      }
+    } else {
+      for (let i = 0; i < step.ids.length; i += 500) await q.query(`DELETE FROM \`${step.table}\` WHERE id IN (?)`, [step.ids.slice(i, i + 500)]);
     }
-    for (let i = 0; i < deletes.length; i += 500) await q.query(`DELETE FROM \`${table}\` WHERE id IN (?)`, [deletes.slice(i, i + 500)]);
   }
 }
 
@@ -198,4 +185,38 @@ export function mutate<T>(fn: (d: DB) => T): Promise<T> {
       throw e;
     }
   });
+}
+
+/* ---------------- Administration (Admin → Database) ---------------- */
+export async function dbStatus() {
+  const d = db();
+  const memory = Object.fromEntries([...toRows(d)].map(([t, rs]) => [t, rs.length])) as Record<string, number>;
+  if (!useMysql) {
+    const st = fs.existsSync(FILE) ? fs.statSync(FILE) : null;
+    return { mode: "file" as const, file: FILE, bytes: st?.size ?? 0, savedAt: st?.mtimeMs ?? 0, memory };
+  }
+  const q = g.__pool!;
+  const url = new URL(process.env.DATABASE_URL!);
+  const [[server]] = await q.query<mysql.RowDataPacket[]>("SELECT VERSION() AS version, DATABASE() AS name");
+  const [[meta]] = await q.query<mysql.RowDataPacket[]>("SELECT version FROM store_meta WHERE id = 1");
+  const [objects] = await q.query<mysql.RowDataPacket[]>(
+    "SELECT TABLE_NAME AS name, TABLE_TYPE AS type, COALESCE(DATA_LENGTH, 0) + COALESCE(INDEX_LENGTH, 0) AS bytes FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_TYPE, TABLE_NAME");
+  const tables = [];
+  for (const o of objects.filter((x) => x.type === "BASE TABLE")) {
+    const [[c]] = await q.query<mysql.RowDataPacket[]>(`SELECT COUNT(*) AS n FROM \`${o.name}\``);
+    tables.push({ name: String(o.name), rows: Number(c.n), bytes: Number(o.bytes), memory: memory[o.name] });
+  }
+  const [fks] = await q.query<mysql.RowDataPacket[]>(
+    "SELECT TABLE_NAME AS child, COLUMN_NAME AS col, REFERENCED_TABLE_NAME AS parent, CONSTRAINT_NAME AS name FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY child, col");
+  const [migrations] = await q.query<mysql.RowDataPacket[]>("SELECT version, name, applied_at FROM schema_migrations ORDER BY version");
+  const { orphans } = await import("./db-schema");
+  return {
+    mode: "mysql" as const,
+    server: String(server.version), database: String(server.name), host: `${url.hostname}:${url.port || 3306}`, user: decodeURIComponent(url.username),
+    weakCredentials: url.username === "root" || !url.password, dataVersion: Number(meta.version),
+    tables, views: objects.filter((x) => x.type === "VIEW").map((x) => String(x.name)),
+    foreignKeys: fks.map((f) => ({ child: String(f.child), col: String(f.col), parent: String(f.parent), name: String(f.name) })),
+    migrations: migrations.map((m) => ({ version: Number(m.version), name: String(m.name), appliedAt: new Date(m.applied_at).getTime() })),
+    orphans: await orphans(q),
+  };
 }

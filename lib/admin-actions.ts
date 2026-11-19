@@ -88,6 +88,7 @@ export async function deleteProduct(id: string) {
       if (d.orders.some((o) => o.items.some((it) => it.productId === id))) { d.products[i].active = false; return "archived"; }
       d.products.splice(i, 1);
       d.reviews = d.reviews.filter((r) => r.productId !== id);
+      d.waitlist = d.waitlist.filter((w) => w.productId !== id); // children go with the product (foreign keys)
       return "deleted";
     });
     touchAdmin();

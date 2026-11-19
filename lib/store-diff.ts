@@ -63,3 +63,16 @@ export function fromRows(rows: Map<string, { id: string; data: unknown }[]>): DB
 export function fromSnapshot(s: Snapshot): DB {
   return fromRows(new Map([...s].map(([t, m]) => [t, [...m].map(([id, c]) => ({ id, data: JSON.parse(c.slice(c.indexOf("\u0000") + 1)) }))])));
 }
+
+/**
+ * Order of SQL operations that satisfies foreign keys: inserts/updates parents before children (COLLECTIONS order:
+ * users, products, orders before the tables pointing at them), deletes children before parents (reverse order).
+ */
+export function writePlan(changes: Change[]) {
+  const rank = (t: string) => { const i = Object.values(COLLECTIONS).findIndex(([name]) => name === t); return i < 0 ? 99 : i; };
+  const sorted = [...changes].sort((a, b) => rank(a.table) - rank(b.table));
+  return [
+    ...sorted.filter((c) => c.upserts.length).map((c) => ({ op: "upsert" as const, table: c.table, rows: c.upserts })),
+    ...sorted.reverse().filter((c) => c.deletes.length).map((c) => ({ op: "delete" as const, table: c.table, ids: c.deletes })),
+  ];
+}
