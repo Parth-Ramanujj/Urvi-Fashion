@@ -56,7 +56,7 @@ export async function saveRetentionSettings(s: RetentionSettings) {
       abandonedCart: { enabled: !!s.abandonedCart.enabled, afterHours: int(s.abandonedCart.afterHours, 1, 168, "Abandoned-bag hours") },
       segments: { atRiskDays, churnDays, vipOrders: int(s.segments.vipOrders, 2, 50, "VIP orders") },
     };
-    mutate((d) => { d.retention = { ...clean, membership: d.retention.membership }; }); // plans are edited on the Membership page
+    await mutate((d) => { d.retention = { ...clean, membership: d.retention.membership }; }); // plans are edited on the Membership page
     revalidatePath("/", "layout");
   });
 }
@@ -68,7 +68,7 @@ export async function adjustCoins(userId: string, amount: number, reason: string
     if (!amt) fail("Enter a non-zero amount");
     const why = str(reason, 120);
     if (!why) fail("Add a reason (customers see it in their history)");
-    const applied = mutate((d) => {
+    const applied = await mutate((d) => {
       const u = d.users.find((x) => x.id === str(userId, 40));
       if (!u) fail("Customer not found");
       const a = creditCoins(d, u!, amt, why);
@@ -91,7 +91,7 @@ export async function sendSegmentOffer(input: { segment: Segment; title: string;
     const minOrder = int(input.minOrder || 0, 0, 1000000, "Minimum order");
     const validDays = int(input.validDays, 1, 90, "Valid days");
     const maxDiscount = percent && input.maxDiscount ? int(input.maxDiscount, 1, 100000, "Max discount") : undefined;
-    const r = mutate((d) => {
+    const r = await mutate((d) => {
       const users = segmentCustomers(d).filter((c) => c.segment === input.segment).map((c) => c.user.id);
       if (!users.length) fail("No customers in this segment right now");
       let code: string;
@@ -112,7 +112,7 @@ export async function remindAbandonedCarts(userIds: string[], couponCode?: strin
     await requireUser("admin");
     const ids = new Set((Array.isArray(userIds) ? userIds : []).slice(0, 500).map((x) => str(x, 40)));
     const code = str(couponCode, 30).toUpperCase();
-    const count = mutate((d) => {
+    const count = await mutate((d) => {
       if (code && !d.coupons.some((c) => c.code === code && c.active && !c.userIds?.length)) fail("Pick an active public coupon");
       const cutoff = Date.now() - d.retention.abandonedCart.afterHours * 3_600_000;
       let n = 0;

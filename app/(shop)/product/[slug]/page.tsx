@@ -21,7 +21,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
   const [{ slug }, { color }, user, t] = await Promise.all([params, searchParams, currentUser(), getT()]);
   const p = db().products.find((x) => x.slug === slug && x.active);
   if (!p) notFound();
-  mutate((d) => { d.products.find((x) => x.id === p.id)!.views++; });
+  await mutate((d) => { d.products.find((x) => x.id === p.id)!.views++; });
 
   const all = db().products.filter((x) => x.active && x.id !== p.id);
   const price = unitPrice(p);

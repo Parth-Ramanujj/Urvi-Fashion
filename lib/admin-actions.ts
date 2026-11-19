@@ -51,7 +51,7 @@ export async function saveProduct(form: FormData) {
     }
     if (new Set(colors.map((c) => c.name)).size !== colors.length) fail("Colour names must be unique");
 
-    const savedId = mutate((db) => {
+    const savedId = await mutate((db) => {
       const existing = d.id ? db.products.find((p) => p.id === d.id) : undefined;
       if (d.id && !existing) fail("Product not found");
       let slug = slugify(name);
@@ -82,7 +82,7 @@ export async function saveProduct(form: FormData) {
 export async function deleteProduct(id: string) {
   return run(async () => {
     await requireUser("admin");
-    const mode = mutate((d) => {
+    const mode = await mutate((d) => {
       const i = d.products.findIndex((p) => p.id === id);
       if (i < 0) fail("Product not found");
       if (d.orders.some((o) => o.items.some((it) => it.productId === id))) { d.products[i].active = false; return "archived"; }
@@ -100,7 +100,7 @@ export async function updateStock(productId: string, sku: string, stock: number)
     await requireUser("admin");
     const n = num(stock, 0, 100000);
     if (Number.isNaN(n)) fail("Enter a valid stock quantity");
-    mutate((d) => {
+    await mutate((d) => {
       const v = d.products.find((p) => p.id === productId)?.variants.find((x) => x.sku === sku);
       if (!v) fail("Variant not found");
       v.stock = n;
@@ -113,7 +113,7 @@ export async function updateStock(productId: string, sku: string, stock: number)
 export async function updateOrder(id: string, input: { status?: OrderStatus; deliveryPartnerId?: string }) {
   return run(async () => {
     await requireUser("admin");
-    mutate((d) => {
+    await mutate((d) => {
       const o = d.orders.find((x) => x.id === id);
       if (!o) fail("Order not found");
       if (input.deliveryPartnerId !== undefined) {
@@ -134,7 +134,7 @@ export async function updateOrder(id: string, input: { status?: OrderStatus; del
 export async function resolveReturn(id: string, approve: boolean) {
   return run(async () => {
     await requireUser("admin");
-    mutate((d) => {
+    await mutate((d) => {
       const o = d.orders.find((x) => x.id === id);
       if (!o || !o.returnRequest || !["return_requested", "exchange_requested"].includes(o.status)) fail("No open return request");
       if (!approve) return setOrderStatus(d, o, "return_rejected", "Your return request was reviewed and couldn't be approved. Contact support for help.");
@@ -159,7 +159,7 @@ export async function setUserBlocked(id: string, blocked: boolean) {
   return run(async () => {
     const me = await requireUser("admin");
     if (id === me.id) fail("You can't block yourself");
-    mutate((d) => {
+    await mutate((d) => {
       const u = d.users.find((x) => x.id === id);
       if (!u) fail("User not found");
       if (u.role === "admin") fail("Admins can't be blocked");
@@ -174,7 +174,7 @@ export async function setUserRole(id: string, role: Role) {
     const me = await requireUser("admin");
     if (id === me.id) fail("You can't change your own role");
     if (!["customer", "admin", "delivery"].includes(role)) fail("Invalid role");
-    mutate((d) => { const u = d.users.find((x) => x.id === id); if (!u) fail("User not found"); u.role = role; });
+    await mutate((d) => { const u = d.users.find((x) => x.id === id); if (!u) fail("User not found"); u.role = role; });
     revalidatePath("/admin/customers");
   });
 }
@@ -184,7 +184,7 @@ export async function adminReplyTicket(id: string, message: string, resolve = fa
     await requireUser("admin");
     const body = str(message, 2000);
     if (!body && !resolve) fail("Message can't be empty");
-    mutate((d) => {
+    await mutate((d) => {
       const t = d.tickets.find((x) => x.id === id);
       if (!t) fail("Ticket not found");
       if (body) t.messages.push({ from: "admin", body, at: Date.now() });
@@ -208,7 +208,7 @@ export async function saveCoupon(input: Partial<Coupon>) {
     const max = input.maxDiscount ? num(input.maxDiscount, 1) : undefined;
     const expiresAt = input.expiresAt ? Number(input.expiresAt) : undefined;
     if (expiresAt !== undefined && !(expiresAt > Date.now())) fail("Expiry must be in the future");
-    mutate((d) => {
+    await mutate((d) => {
       if (d.coupons.some((c) => c.code === code)) fail("A coupon with this code already exists");
       d.coupons.unshift({
         code, description: str(input.description, 140) || (input.type === "percent" ? `${value}% off` : `₹${value} off`), type: input.type === "flat" ? "flat" : "percent", value, minOrder,
@@ -222,7 +222,7 @@ export async function saveCoupon(input: Partial<Coupon>) {
 export async function setCouponActive(code: string, active: boolean) {
   return run(async () => {
     await requireUser("admin");
-    mutate((d) => { const c = d.coupons.find((x) => x.code === code); if (!c) fail("Coupon not found"); c.active = active; });
+    await mutate((d) => { const c = d.coupons.find((x) => x.code === code); if (!c) fail("Coupon not found"); c.active = active; });
     revalidatePath("/admin/marketing");
   });
 }
@@ -230,7 +230,7 @@ export async function setCouponActive(code: string, active: boolean) {
 export async function deleteCoupon(code: string) {
   return run(async () => {
     await requireUser("admin");
-    mutate((d) => { d.coupons = d.coupons.filter((c) => c.code !== code); });
+    await mutate((d) => { d.coupons = d.coupons.filter((c) => c.code !== code); });
     revalidatePath("/admin/marketing");
   });
 }
@@ -242,7 +242,7 @@ export async function createFlashSale(productIds: string[], percent: number, end
     if (Number.isNaN(pct)) fail("Discount must be 5–80%");
     if (!(Number(endsAt) > Date.now())) fail("End time must be in the future");
     if (!productIds?.length) fail("Pick at least one product");
-    mutate((d) => { for (const p of d.products) if (productIds.includes(p.id)) p.flashSale = { percent: pct, endsAt: Number(endsAt) }; });
+    await mutate((d) => { for (const p of d.products) if (productIds.includes(p.id)) p.flashSale = { percent: pct, endsAt: Number(endsAt) }; });
     touchAdmin();
   });
 }
@@ -250,7 +250,7 @@ export async function createFlashSale(productIds: string[], percent: number, end
 export async function endFlashSale(productId?: string) {
   return run(async () => {
     await requireUser("admin");
-    mutate((d) => { for (const p of d.products) if (!productId || p.id === productId) p.flashSale = null; });
+    await mutate((d) => { for (const p of d.products) if (!productId || p.id === productId) p.flashSale = null; });
     touchAdmin();
   });
 }
@@ -262,7 +262,7 @@ export async function sendCampaign(input: { title: string; body: string; href?: 
     if (title.length < 3 || body.length < 3) fail("Add a title and message");
     if (href && !href.startsWith("/")) fail("Link must be a path on this site, e.g. /shop");
     // shortcut: in-app notification feed only; add Web Push (VAPID + service worker) or FCM to reach closed browsers/apps.
-    const reach = mutate((d) => {
+    const reach = await mutate((d) => {
       const now = Date.now();
       let reach: number;
       if (input.audience === "customers") {
@@ -287,7 +287,7 @@ export async function deliveryUpdate(orderId: string, status: "out_for_delivery"
     const me = await requireUser("delivery");
     const from: Record<string, OrderStatus> = { out_for_delivery: "shipped", delivered: "out_for_delivery" };
     if (!from[status]) fail("Invalid status");
-    mutate((d) => {
+    await mutate((d) => {
       const o = d.orders.find((x) => x.id === orderId && x.deliveryPartnerId === me.id);
       if (!o) fail("Order not assigned to you");
       if (o.status !== from[status]) fail(`Order must be ${from[status].replace(/_/g, " ")} first`);

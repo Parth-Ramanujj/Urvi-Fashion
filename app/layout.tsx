@@ -19,6 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: { default: `${b.name} — ${b.tagline}`, template: `%s · ${b.name}` },
     description: b.description,
+    metadataBase: new URL(process.env.APP_URL || "http://localhost:3000"),
     applicationName: b.name,
     appleWebApp: { capable: true, title: b.shortName, statusBarStyle: "default" },
     icons: { icon: [{ url: `/icons/32${v}`, sizes: "32x32" }, { url: `/icons/192${v}`, sizes: "192x192" }], apple: `/icons/180${v}` },

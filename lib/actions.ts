@@ -44,7 +44,7 @@ export async function register(input: { name: string; email: string; password: s
     if (password.length < 8 || !/\d/.test(password) || !/[a-zA-Z]/.test(password)) fail("Password needs 8+ characters with letters and numbers");
     if (db().users.some((u) => u.email === email)) fail("An account with this email already exists");
     const id = newId();
-    mutate((d) => {
+    await mutate((d) => {
       const u: User = { id, name, email, passwordHash: hashPassword(password), role: "customer", blocked: false, addresses: [], measurements: {}, createdAt: Date.now(), lastActiveAt: Date.now() };
       d.users.push(u);
       onboard(d, u, input.ref);
@@ -77,7 +77,7 @@ export async function sendOtp(phoneRaw: string) {
     const prev = db().otps.find((o) => o.phone === phone);
     if (prev && Date.now() - prev.sentAt < 30_000) fail("Please wait 30 seconds before requesting another code");
     const code = String(Math.floor(100000 + Math.random() * 900000));
-    mutate((d) => {
+    await mutate((d) => {
       d.otps = d.otps.filter((o) => o.phone !== phone && o.expiresAt > Date.now());
       d.otps.push({ phone, hash: hmac(d.secret, `${phone}:${code}`), expiresAt: Date.now() + 5 * 60_000, attempts: 0, sentAt: Date.now() });
     });
@@ -92,7 +92,7 @@ export async function verifyOtp(input: { phone: string; code: string; name?: str
     const phone = str(input.phone, 15).replace(/\D/g, "").slice(-10);
     const code = str(input.code, 6);
     // Count the attempt in its own write: a failed check throws and would otherwise roll the counter back.
-    const ok = mutate((d) => {
+    const ok = await mutate((d) => {
       const o = d.otps.find((x) => x.phone === phone);
       if (!o || o.expiresAt < Date.now()) return "expired";
       if (o.attempts >= 5) return "locked";
@@ -102,7 +102,7 @@ export async function verifyOtp(input: { phone: string; code: string; name?: str
     if (ok === "expired") fail("Code expired. Request a new one.");
     if (ok === "locked") fail("Too many attempts. Request a new code.");
     if (ok === "bad") fail("Incorrect code");
-    const userId = mutate((d) => {
+    const userId = await mutate((d) => {
       d.otps = d.otps.filter((x) => x.phone !== phone);
       let u = d.users.find((x) => x.phone === phone);
       if (u?.blocked) fail("This account has been suspended. Contact support.");
@@ -136,7 +136,7 @@ export async function updateProfile(input: { name: string; phone?: string; measu
     const dob = str(input.dob, 10);
     if (dob && (!/^\d{4}-\d{2}-\d{2}$/.test(dob) || Number.isNaN(Date.parse(dob)) || Date.parse(dob) > Date.now() - 5 * 365 * 86_400_000)) fail("Enter a valid date of birth");
     if (dob && me.dob && me.dob !== dob) fail("Date of birth can only be set once. Contact support to change it.");
-    mutate((d) => { const u = d.users.find((x) => x.id === me.id)!; u.name = name; if (phone) u.phone = phone; if (input.measurements) u.measurements = m; if (dob && !u.dob) { u.dob = dob; grantBirthday(d, u); } });
+    await mutate((d) => { const u = d.users.find((x) => x.id === me.id)!; u.name = name; if (phone) u.phone = phone; if (input.measurements) u.measurements = m; if (dob && !u.dob) { u.dob = dob; grantBirthday(d, u); } });
     revalidatePath("/account", "layout");
   });
 }
@@ -151,7 +151,7 @@ export async function saveAddress(a: Partial<Address>) {
     if (!addr.name || !addr.line1 || !addr.city || !addr.state) fail("Please fill in all required address fields");
     if (!PHONE.test(addr.phone)) fail("Enter a valid 10-digit mobile number");
     if (!/^\d{6}$/.test(addr.pincode)) fail("Enter a valid 6-digit PIN code");
-    mutate((d) => {
+    await mutate((d) => {
       const u = d.users.find((x) => x.id === me.id)!;
       if (addr.isDefault || u.addresses.length === 0) { u.addresses.forEach((x) => (x.isDefault = false)); addr.isDefault = true; }
       const i = u.addresses.findIndex((x) => x.id === addr.id);
@@ -166,7 +166,7 @@ export async function saveAddress(a: Partial<Address>) {
 export async function deleteAddress(id: string) {
   return run(async () => {
     const me = await requireUser();
-    mutate((d) => {
+    await mutate((d) => {
       const u = d.users.find((x) => x.id === me.id)!;
       u.addresses = u.addresses.filter((a) => a.id !== id);
       if (u.addresses.length && !u.addresses.some((a) => a.isDefault)) u.addresses[0].isDefault = true;
@@ -258,7 +258,7 @@ export async function addReview(form: FormData) {
     const photos = (await Promise.all(files.map(saveUpload))).filter(Boolean) as string[];
     const orders = db().orders.filter((o) => o.userId === me.id && ["delivered", "returned", "exchanged", "return_requested", "exchange_requested", "return_rejected"].includes(o.status));
     const bought = orders.flatMap((o) => o.items).find((i) => i.productId === productId);
-    mutate((d) => {
+    await mutate((d) => {
       const prod = d.products.find((x) => x.id === productId)!;
       prod.rating = Math.round(((prod.rating * prod.ratingCount + rating) / (prod.ratingCount + 1)) * 10) / 10;
       prod.ratingCount++;
@@ -288,7 +288,7 @@ export async function placeOrder(input: {
     if (input.method === "cod" && r.totals.total > 10000) fail("Cash on Delivery is available for orders up to ₹10,000");
     const speed = r.speed;
     const id = newId();
-    mutate((d) => {
+    await mutate((d) => {
       for (const l of r.valid) {
         const v = d.products.find((p) => p.id === l.productId)!.variants.find((x) => x.color === l.color && x.size === l.size)!;
         if (v.stock < l.qty) fail("Stock changed while you were checking out. Please review your bag.");
@@ -319,7 +319,7 @@ export async function placeOrder(input: {
 export async function cancelOrder(id: string, reason: string) {
   return run(async () => {
     const me = await requireUser();
-    mutate((d) => {
+    await mutate((d) => {
       const o = d.orders.find((x) => x.id === id && x.userId === me.id);
       if (!o) fail("Order not found");
       if (!["placed", "packed"].includes(o!.status)) fail("This order can no longer be cancelled");
@@ -334,7 +334,7 @@ export async function requestReturn(id: string, type: "return" | "exchange", rea
     const me = await requireUser();
     if (str(reason, 300).length < 3) fail("Please tell us why");
     if (type === "exchange" && !SIZES.includes(exchangeSize as never)) fail("Choose the size you'd like instead");
-    mutate((d) => {
+    await mutate((d) => {
       const o = d.orders.find((x) => x.id === id && x.userId === me.id);
       if (!o || o.status !== "delivered") fail("Only delivered orders can be returned");
       const deliveredAt = o!.timeline.find((t) => t.status === "delivered")?.at ?? o!.createdAt;
@@ -352,7 +352,7 @@ export async function createTicket(input: { subject: string; message: string; or
     const me = await requireUser();
     const subject = str(input.subject, 120), message = str(input.message, 2000);
     if (subject.length < 3 || message.length < 5) fail("Please add a subject and a message");
-    mutate((d) => d.tickets.push({ id: newId(), userId: me.id, subject, orderRef: str(input.orderRef, 30) || undefined, status: "open", messages: [{ from: "customer", body: message, at: Date.now() }], createdAt: Date.now() }));
+    await mutate((d) => d.tickets.push({ id: newId(), userId: me.id, subject, orderRef: str(input.orderRef, 30) || undefined, status: "open", messages: [{ from: "customer", body: message, at: Date.now() }], createdAt: Date.now() }));
     revalidatePath("/account/support");
   });
 }
@@ -362,7 +362,7 @@ export async function replyTicket(id: string, message: string) {
     const me = await requireUser();
     const body = str(message, 2000);
     if (!body) fail("Message can't be empty");
-    mutate((d) => {
+    await mutate((d) => {
       const t = d.tickets.find((x) => x.id === id && (x.userId === me.id || me.role === "admin"));
       if (!t) fail("Ticket not found");
       t!.messages.push({ from: me.role === "admin" ? "admin" : "customer", body, at: Date.now() });
@@ -376,7 +376,7 @@ export async function myNotifications() {
   const me = await currentUser();
   if (!me) return [];
   // Birthday reward is granted lazily the first time the shopper is active in their birthday month.
-  if (me.dob && me.role === "customer") mutate((d) => { grantBirthday(d, d.users.find((x) => x.id === me.id)!); });
+  if (me.dob && me.role === "customer") await mutate((d) => { grantBirthday(d, d.users.find((x) => x.id === me.id)!); });
   return db().notifications.filter((n) => n.userId === me.id || (n.userId === null && n.createdAt >= me.createdAt - 7 * 86_400_000))
     .sort((a, b) => b.createdAt - a.createdAt).slice(0, 20)
     .map((n) => ({ id: n.id, title: n.title, body: n.body, href: n.href, createdAt: n.createdAt, read: n.readBy.includes(me.id) }));
@@ -385,7 +385,7 @@ export async function myNotifications() {
 export async function markNotificationsRead() {
   const me = await currentUser();
   if (!me) return;
-  mutate((d) => d.notifications.forEach((n) => { if ((n.userId === me.id || n.userId === null) && !n.readBy.includes(me.id)) n.readBy.push(me.id); }));
+  await mutate((d) => d.notifications.forEach((n) => { if ((n.userId === me.id || n.userId === null) && !n.readBy.includes(me.id)) n.readBy.push(me.id); }));
 }
 
 /* ---------------- Retention: back-in-stock, saved bag ---------------- */
@@ -397,7 +397,7 @@ export async function joinWaitlist(productId: string, color: string, size: Size)
     const v = p?.variants.find((x) => x.color === color && x.size === size);
     if (!p || !v) fail("Product not found");
     if (v!.stock > 0) fail("Good news — this size is in stock now");
-    mutate((d) => {
+    await mutate((d) => {
       if (d.waitlist.some((w) => w.userId === me.id && w.productId === productId && w.color === color && w.size === size && !w.notifiedAt)) return;
       d.waitlist.push({ id: newId(), userId: me.id, productId, color, size, createdAt: Date.now() });
     });
@@ -412,7 +412,7 @@ export async function syncCart(items: CartLine[]) {
     productId: str(l.productId, 20), slug: str(l.slug, 120), name: str(l.name, 120), brand: str(l.brand, 60), image: str(l.image, 300),
     color: str(l.color, 40), size: str(l.size, 5) as Size, sku: str(l.sku, 60), qty: Math.max(1, Math.min(10, Math.floor(Number(l.qty) || 1))), price: Number(l.price) || 0, mrp: Number(l.mrp) || 0,
   })).filter((l) => l.productId && l.sku);
-  mutate((d) => {
+  await mutate((d) => {
     const u = d.users.find((x) => x.id === me.id)!;
     const same = JSON.stringify(u.cart?.items ?? []) === JSON.stringify(clean);
     if (!same) u.cart = clean.length ? { items: clean, updatedAt: Date.now() } : undefined;
@@ -434,7 +434,7 @@ export async function buyMembership(planId: string, method: PaymentMethod) {
     if (!plan) fail("This plan is no longer available");
     if (!["card", "upi", "netbanking", "wallet"].includes(method)) fail("Choose an online payment method");
     // shortcut: payment is simulated like checkout; confirm via the gateway webhook before activating in production.
-    return mutate((d) => {
+    return await mutate((d) => {
       const u = d.users.find((x) => x.id === me.id)!;
       const now = Date.now();
       const base = u.membership && u.membership.expiresAt > now && u.membership.planId === plan!.id ? u.membership.expiresAt : now; // renewing extends
@@ -455,7 +455,7 @@ export async function claimSocial(platformId: string) {
     const link = s?.enabled ? s.links.find((l) => l.id === platformId) : undefined;
     if (!link) fail("This reward isn't available");
     // shortcut: honour-based (we can't verify a follow without each platform's API); one claim per platform per account.
-    return mutate((d) => {
+    return await mutate((d) => {
       const u = d.users.find((x) => x.id === me.id)!;
       if (u.socialClaimed?.includes(link!.id)) return 0;
       u.socialClaimed = [...(u.socialClaimed ?? []), link!.id];
@@ -472,6 +472,6 @@ export async function changePassword(input: { current?: string; next: string }) 
     // Accounts created by OTP/Google have no password yet and may set one without the current password.
     if (me.passwordHash && !verifyPassword(String(input.current ?? ""), me.passwordHash)) fail("Current password is incorrect");
     if (next.length < 8 || !/\d/.test(next) || !/[a-zA-Z]/.test(next)) fail("New password needs 8+ characters with letters and numbers");
-    mutate((d) => { d.users.find((x) => x.id === me.id)!.passwordHash = hashPassword(next); });
+    await mutate((d) => { d.users.find((x) => x.id === me.id)!.passwordHash = hashPassword(next); });
   });
 }

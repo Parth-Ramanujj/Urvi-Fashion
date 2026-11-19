@@ -6,6 +6,7 @@ import { DEFAULT_DELIVERY, DEFAULT_RETENTION as R, maxRedeemable, tierOf } from 
 import { deliveryFor } from "../lib/delivery.ts";
 import { brandCss, palette } from "../lib/brand.ts";
 import { buildBlankSeed, buildSeed } from "../lib/seed.ts";
+import { diff, fromSnapshot, snapshotOf, toRows } from "../lib/store-diff.ts";
 
 const lines = [{ price: 500, mrp: 1000, qty: 2 }];
 let t = computeTotals(lines, "standard");
@@ -62,4 +63,27 @@ const a = buildSeed(), b = buildSeed();
 assert.deepEqual(a.users.map((u) => [u.id, u.email, u.referralCode]), b.users.map((u) => [u.id, u.email, u.referralCode]));
 assert.deepEqual(a.orders.map((o) => o.id), b.orders.map((o) => o.id));
 assert.notEqual(a.secret, b.secret);
+// MySQL write-diff: unchanged store → nothing written; edits, inserts, deletes and reorders → only those rows.
+{
+  const d = buildSeed();
+  let snap = snapshotOf(toRows(d));
+  assert.equal(diff(snap, d).changes.length, 0);
+  d.products[0].name = "Edited";
+  d.users.push({ ...d.users[0], id: "new-user", email: "new@x.in" });
+  const gone = d.coupons.pop()!.code;
+  let r = diff(snap, d);
+  const by = (t: string) => r.changes.find((c) => c.table === t);
+  assert.deepEqual(by("products")?.upserts.map((x) => x.id), [d.products[0].id]);
+  assert.deepEqual(by("users")?.upserts.map((x) => x.id), ["new-user"]);
+  assert.deepEqual(by("coupons")?.deletes, [gone]);
+  assert.equal(r.changes.length, 3);
+  snap = r.next;
+  [d.banners[0], d.banners[1]] = [d.banners[1], d.banners[0]]; // reorder = position change only
+  r = diff(snap, d);
+  assert.deepEqual(r.changes.map((c) => [c.table, c.upserts.length, c.deletes.length]), [["banners", 2, 0]]);
+  const back = fromSnapshot(r.next);
+  assert.deepEqual([back.banners.map((b) => b.id), back.products[0].name, back.secret, back.brand?.name], [d.banners.map((b) => b.id), "Edited", d.secret, d.brand?.name]);
+  d.users.push({ ...d.users[1] }); // same id twice must never reach MySQL
+  assert.throws(() => diff(r.next, d), /Duplicate key/);
+}
 console.log("selfcheck: all passed");

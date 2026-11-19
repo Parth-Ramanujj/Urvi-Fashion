@@ -65,7 +65,7 @@ export async function saveBrand(form: FormData) {
     if (iconFile instanceof File && iconFile.size > 0 && !["image/png", "image/jpeg"].includes(iconFile.type)) fail("App icon must be a PNG or JPG image");
     const logo = await saveUpload(form.get("logo"));
     const icon = await saveUpload(iconFile);
-    mutate((d) => {
+    await mutate((d) => {
       const cur = d.brand!;
       d.brand = {
         ...next,
@@ -100,7 +100,7 @@ export async function saveBanners(form: FormData) {
         image: upload ?? (typeof b.image === "string" && b.image.startsWith("/api/files/") ? b.image : undefined),
       });
     }
-    mutate((d) => { d.banners = out; });
+    await mutate((d) => { d.banners = out; });
     revalidatePath("/", "layout");
     return out;
   });

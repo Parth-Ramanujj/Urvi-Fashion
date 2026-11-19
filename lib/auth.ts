@@ -14,7 +14,7 @@ export async function startSession(userId: string) {
   (await cookies()).set(COOKIE, `${payload}.${hmac(secret(), payload)}`, {
     httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: MAX_AGE,
   });
-  mutate((d) => { const u = d.users.find((x) => x.id === userId); if (u) u.lastActiveAt = Date.now(); });
+  await mutate((d) => { const u = d.users.find((x) => x.id === userId); if (u) u.lastActiveAt = Date.now(); });
 }
 
 export async function endSession() {

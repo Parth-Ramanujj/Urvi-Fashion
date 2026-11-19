@@ -47,10 +47,37 @@ Coupons: `WELCOME10`, `STYLE20`, `FLAT500` (and `MONSOON15`, which has expired).
 
 Product images: seed products use built-in vector art (`components/ProductArt.tsx`) that recolours with each swatch. Photos uploaded in admin replace it per colour.
 
+## Database (MySQL)
+
+Set `DATABASE_URL` and the store runs on MySQL (8+, or MariaDB 10.5+):
+
+```bash
+DATABASE_URL=mysql://root:@127.0.0.1:3306/clothing
+```
+
+- **Setup is automatic.** On the first start the `clothing` database and all tables are created, and your existing `data/db.json` is imported once (or demo/blank data is seeded if there's no file). Nothing to run by hand.
+- **Tables:** `users`, `products`, `orders`, `reviews`, `coupons`, `banners`, `notifications`, `campaigns`, `tickets`, `otps`, `coin_ledger`, `waitlist`, `memberships` (one row per record, full record in a `data` JSON column), plus `settings` (brand, retention, delivery) and `store_meta` (change counter). Handy columns are extracted and indexed for phpMyAdmin and reports: users `email` (unique), `phone`, `role`; products `slug` (unique), `name`; orders `ref` (unique), `user_id`, `status`, `total`, `created_at`.
+- **Safe with many servers.** Every save is one transaction holding a row lock, so concurrent writes from several app servers or admins are applied one after another, never overwritten; only changed rows are written. Other servers pick up changes within 3 seconds for reads, and immediately before their own writes.
+- **Production user.** Don't use `root` in production. Create a dedicated user:
+
+```sql
+CREATE USER 'clothing'@'%' IDENTIFIED BY 'a-strong-password';
+GRANT ALL ON clothing.* TO 'clothing'@'%';
+```
+
+- **Backups:**
+
+```bash
+mysqldump -u clothing -p clothing > backup.sql
+```
+
+  Also back up `DATA_DIR/uploads` (product, review and logo images are stored as files).
+- Without `DATABASE_URL` the app uses the JSON file. That's how the Vercel demo runs.
+
 ## Deploying
 
-- **Vercel (demo/testing only).** It works out of the box: the store keeps its data in Vercel's temporary `/tmp` folder. Set **`SESSION_SECRET`** in Vercel → Settings → Environment Variables, or logins will randomly drop between Vercel's servers. That data is **wiped on every cold start and not shared between Vercel's servers**, so new sign-ups, orders, uploads and admin changes can disappear. Fine for showing the demo, not for real customers.
-- **Real store.** Use a host with a persistent disk (Railway or Render with a volume, or a VPS) and point `DATA_DIR` at that disk.
+- **Vercel (demo/testing only).** It works out of the box: the store keeps its data in Vercel's temporary `/tmp` folder (or set `DATABASE_URL` to a cloud MySQL to make it permanent). Set **`SESSION_SECRET`** in Vercel → Settings → Environment Variables, or logins will randomly drop between Vercel's servers. That data is **wiped on every cold start and not shared between Vercel's servers**, so new sign-ups, orders, uploads and admin changes can disappear. Fine for showing the demo, not for real customers.
+- **Real store.** Set `DATABASE_URL` to your MySQL. Keep uploads on a persistent disk (`DATA_DIR`), e.g. a VPS, or Railway/Render with a volume.
 - **Android app without the URL bar.** If the app opens with a bar showing the site name and URL at the top:
   - **Installed from Chrome:** remove it from the home screen, open the site in Chrome, and tap **Install app** again. Chrome only makes a real full-screen app when the site works at install time.
   - **Built as an APK (PWABuilder/Bubblewrap):** enter the package name and SHA-256 signing fingerprint in **Admin → Branding → Android app**. The site then serves `/.well-known/assetlinks.json` and Android opens the APK full-screen. If you publish on Play Store, also add Play's app-signing fingerprint (Play Console → App integrity).
@@ -103,7 +130,7 @@ DATA_DIR=./data-brand-b PORT=3001 npm start
 
 ## Before going live (deliberate shortcuts, marked `shortcut:` in code)
 
-1. **Database**: `lib/db.ts` is a single-process JSON store. Swap it for Postgres/Prisma before running more than one instance. All reads and writes go through `db()`/`mutate()`.
+1. **Database**: set `DATABASE_URL` (MySQL) for production. The JSON-file fallback is for local dev and demos. The whole store is held in memory per server process; fine for thousands of products and orders. For a very large catalog, move hot paths (orders, products) to direct SQL queries.
 2. **Payments** are simulated in `placeOrder` (`lib/actions.ts`). Integrate Razorpay or Stripe and mark orders paid from the webhook.
 3. **SMS**: wire an OTP provider (Twilio/MSG91) in `sendOtp`.
 4. **Wishlist** lives in localStorage, per device (the bag syncs to the server for logged-in customers).

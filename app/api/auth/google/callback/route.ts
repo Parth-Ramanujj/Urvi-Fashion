@@ -22,7 +22,7 @@ export async function GET(req: Request) {
   const info = await fetch("https://openidconnect.googleapis.com/v1/userinfo", { headers: { Authorization: `Bearer ${token.access_token}` } }).then((r) => r.json());
   if (!info.sub || !info.email || !info.email_verified) return Response.redirect(`${base}/login?error=google_failed`);
 
-  const result = mutate((d) => {
+  const result = await mutate((d) => {
     let u = d.users.find((x) => x.googleId === info.sub) ?? d.users.find((x) => x.email === String(info.email).toLowerCase());
     if (u?.blocked) return null;
     if (!u) {

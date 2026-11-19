@@ -34,7 +34,7 @@ export async function saveMembership(enabled: boolean, plans: MembershipPlan[]) 
       };
     });
     if (new Set(clean.map((p) => p.id)).size !== clean.length) fail("Plan ids must be unique");
-    mutate((d) => {
+    await mutate((d) => {
       const removed = (d.retention.membership?.plans ?? []).filter((p) => !clean.some((c) => c.id === p.id));
       const sold = removed.find((p) => (d.memberships ?? []).some((m) => m.planId === p.id) || d.users.some((u) => u.membership?.planId === p.id));
       if (sold) fail(`"${sold.name}" has members — deactivate it instead of deleting`);
@@ -48,7 +48,7 @@ export async function extendMembership(userId: string, days: number) {
   return run(async () => {
     await requireUser("admin");
     const n = num(days, 1, 365, "Days");
-    mutate((d) => {
+    await mutate((d) => {
       const u = d.users.find((x) => x.id === str(userId, 40));
       if (!u?.membership) fail("This customer has no membership");
       u!.membership!.expiresAt = Math.max(u!.membership!.expiresAt, Date.now()) + n * 86_400_000;
@@ -61,7 +61,7 @@ export async function extendMembership(userId: string, days: number) {
 export async function cancelMembership(userId: string) {
   return run(async () => {
     await requireUser("admin");
-    mutate((d) => {
+    await mutate((d) => {
       const u = d.users.find((x) => x.id === str(userId, 40));
       if (!u?.membership || u.membership.expiresAt <= Date.now()) fail("No active membership to cancel");
       u!.membership!.expiresAt = Date.now();
@@ -98,7 +98,7 @@ export async function saveDeliverySettings(s: DeliverySettings) {
       freeAbove: num(s.freeAbove, 0, 1000000, "Free-delivery threshold"),
     };
     if (clean.restrictToCities && !cities.some((c) => c.active)) fail("Add at least one active city before restricting delivery to listed cities");
-    mutate((d) => { d.delivery = clean; });
+    await mutate((d) => { d.delivery = clean; });
     revalidatePath("/admin/delivery"); revalidatePath("/", "layout");
   });
 }
@@ -107,7 +107,7 @@ export async function setRiderCity(userId: string, city: string | null) {
   return run(async () => {
     await requireUser("admin");
     const c = str(city, 40);
-    mutate((d) => {
+    await mutate((d) => {
       const u = d.users.find((x) => x.id === str(userId, 40) && x.role === "delivery");
       if (!u) fail("Delivery partner not found");
       u!.city = c || undefined;
@@ -125,7 +125,7 @@ export async function sendPersonalCoupon(userId: string, o: { type: "percent" | 
     const days = num(o?.days, 1, 90, "Valid days");
     const minOrder = num(o?.minOrder || 0, 0, 1000000, "Minimum order");
     const msg = str(o?.message, 200);
-    const code = mutate((d) => {
+    const code = await mutate((d) => {
       const u = d.users.find((x) => x.id === str(userId, 40) && x.role === "customer");
       if (!u) fail("Customer not found");
       const off = percent ? `${value}% off` : `₹${value} off`;
