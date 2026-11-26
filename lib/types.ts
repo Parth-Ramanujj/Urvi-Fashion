@@ -148,7 +148,7 @@ export interface Coupon {
   onePerUser?: boolean;
 }
 
-export interface Banner { id: string; eyebrow: string; title: string; subtitle: string; cta: string; href: string; from: string; to: string; art: { kind: ArtKind; hex: string }; badge?: string; /** Uploaded banner photo; replaces the generated art. */ image?: string; active?: boolean }
+export interface Banner { id: string; eyebrow: string; title: string; subtitle: string; cta: string; href: string; from: string; to: string; art: { kind: ArtKind; hex: string }; badge?: string; /** Uploaded banner photo; replaces the generated art. */ image?: string; /** Render uploaded image full-bleed without text/gradient overlay. */ fullImage?: boolean; active?: boolean }
 
 export interface Notification { id: string; userId: string | null; title: string; body: string; href?: string; createdAt: number; readBy: string[] }
 export interface Campaign { id: string; title: string; body: string; href?: string; audience: string; sentAt: number; reach: number }

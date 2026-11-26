@@ -13,16 +13,23 @@ const blank = (): Banner => ({ id: `b${Date.now().toString(36)}`, eyebrow: "New 
 function Preview({ b, img }: { b: Banner; img?: string }) {
   return (
     <div className="relative flex h-40 items-center overflow-hidden rounded-2xl text-white" style={{ background: `linear-gradient(120deg, ${b.from}, ${b.to})` }}>
-      <div className="absolute inset-y-0 left-0 w-1/2 [mask-image:linear-gradient(to_right,black_65%,transparent)]">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        {img ? <img src={img} alt="" className="h-full w-full object-cover" /> : <ProductArt kind={b.art.kind} hex={b.art.hex} className="h-full w-full" />}
-      </div>
-      <div className="relative ml-auto flex w-1/2 flex-col items-center gap-1 px-2 text-center">
-        {b.eyebrow && <span className="rounded-full bg-white/15 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider">{b.eyebrow}</span>}
-        <p className="whitespace-pre-line font-display text-lg font-bold leading-tight">{b.title}</p>
-        {b.badge && <p className="text-xl font-black leading-none">{b.badge}</p>}
-        <span className="mt-1 inline-flex items-center gap-1 rounded bg-amber-300 px-2 py-0.5 text-[10px] font-bold text-zinc-900">{b.cta}<ChevronRight className="size-3" /></span>
-      </div>
+      {b.fullImage && img ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={img} alt="" className="h-full w-full object-cover" />
+      ) : (
+        <>
+          <div className="absolute inset-y-0 left-0 w-1/2 [mask-image:linear-gradient(to_right,black_65%,transparent)]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {img ? <img src={img} alt="" className="h-full w-full object-cover" /> : <ProductArt kind={b.art.kind} hex={b.art.hex} className="h-full w-full" />}
+          </div>
+          <div className="relative ml-auto flex w-1/2 flex-col items-center gap-1 px-2 text-center">
+            {b.eyebrow && <span className="rounded-full bg-white/15 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider">{b.eyebrow}</span>}
+            <p className="whitespace-pre-line font-display text-lg font-bold leading-tight">{b.title}</p>
+            {b.badge && <p className="text-xl font-black leading-none">{b.badge}</p>}
+            <span className="mt-1 inline-flex items-center gap-1 rounded bg-amber-300 px-2 py-0.5 text-[10px] font-bold text-zinc-900">{b.cta}<ChevronRight className="size-3" /></span>
+          </div>
+        </>
+      )}
       {b.active === false && <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold">Hidden</span>}
     </div>
   );
@@ -89,7 +96,8 @@ export default function BannerEditor({ initial }: { initial: Banner[] }) {
                 <label className="btn-ghost cursor-pointer py-2"><ImagePlus className="size-4" />{img ? "Replace photo" : "Upload photo"}
                   <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) setFiles((x) => ({ ...x, [b.id]: f })); e.target.value = ""; }} />
                 </label>
-                {img && <button type="button" onClick={() => { setFiles(({ [b.id]: _, ...rest }) => rest); patch(i, { image: undefined }); }} className="btn-ghost py-2 text-red-600">Use generated art</button>}
+                {img && <button type="button" onClick={() => { setFiles(({ [b.id]: _, ...rest }) => rest); patch(i, { image: undefined, fullImage: false }); }} className="btn-ghost py-2 text-red-600">Use generated art</button>}
+                {img && <Toggle label="Full custom banner (hide text & gradient)" on={!!b.fullImage} onChange={(v) => patch(i, { fullImage: v })} />}
                 {!img && (<>
                   <label className="block"><span className="label">Art style</span><select className="input w-auto capitalize" value={b.art.kind} onChange={(e) => patch(i, { art: { ...b.art, kind: e.target.value as Banner["art"]["kind"] } })}>{ART_KINDS.map((k) => <option key={k}>{k}</option>)}</select></label>
                   <div className="w-44">{color("Art colour", b.art.hex, (v) => patch(i, { art: { ...b.art, hex: v } }))}</div>
