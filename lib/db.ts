@@ -61,7 +61,7 @@ async function loadSql(q: Q) {
   const rows = new Map<string, { id: string; data: unknown }[]>();
   for (const t of TABLES) {
     const { rows: rs } = await q.query<{ id: string; data: unknown }>(`SELECT id, data FROM "${t}" ORDER BY pos`);
-    rows.set(t, rs.map((r) => ({ id: r.id, data: typeof r.data === "string" ? JSON.parse(r.data) : r.data })));
+    rows.set(t, rs.map((r) => ({ id: r.id, data: r.data })));
   }
   const { rows: meta } = await q.query<{ version: string }>("SELECT version FROM store_meta WHERE id = 1");
   g.__snap = snapshotOf(toRows(fromRows(rows)));
