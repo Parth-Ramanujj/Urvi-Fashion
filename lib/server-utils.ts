@@ -12,7 +12,7 @@ import type { DB, Order, OrderStatus } from "./types";
 
 export type Result<T = undefined> = { ok: true; data: T } | { ok: false; error: string };
 
-/** Wrap a server action body: known errors become { ok:false } (production redacts thrown messages). */
+/** Wrap a server action body: known errors become { ok:false } with a clear, user-friendly message. */
 export async function run<T>(fn: () => Promise<T> | T): Promise<Result<T>> {
   try {
     return { ok: true, data: await fn() };
@@ -20,6 +20,12 @@ export async function run<T>(fn: () => Promise<T> | T): Promise<Result<T>> {
     if (e instanceof HttpError) return { ok: false, error: e.message };
     if (e && typeof e === "object" && "digest" in e) throw e; // let redirect()/notFound() through
     console.error(e);
+    const code = (e as { code?: string })?.code;
+    const msg = e instanceof Error ? e.message : "";
+    if (code === "23505" || msg.includes("Duplicate key")) return { ok: false, error: "This item already exists. Please use a different name or code." };
+    if (code === "23503") return { ok: false, error: "This record is linked to other data and cannot be removed." };
+    if (code === "ECONNREFUSED" || code === "ETIMEDOUT" || code === "ENOTFOUND") return { ok: false, error: "Connection issue — please check your internet or database and try again." };
+    if (msg.includes("Database not ready")) return { ok: false, error: "Database is still starting up. Please try again in a few seconds." };
     return { ok: false, error: "Something went wrong. Please try again." };
   }
 }
