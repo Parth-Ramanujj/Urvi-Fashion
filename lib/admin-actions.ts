@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "./auth";
 import { newId } from "./crypto";
 import { mutate } from "./db";
+import { deliverInBackground } from "./integrations";
 import { artImages } from "./seed";
 import { fail, run, saveUpload, setOrderStatus, str } from "./server-utils";
 import { ART_KINDS, CATEGORIES, FLOW, SIZES, type Coupon, type OrderStatus, type Product, type Role, type Size, type Variant } from "./types";
@@ -207,6 +208,7 @@ export async function updateOrder(id: string, input: { status?: OrderStatus; del
         setOrderStatus(d, o, input.status, input.status === "cancelled" ? "Cancelled by the store. Any payment will be refunded." : undefined);
       }
     });
+    deliverInBackground();
     touchAdmin();
   });
 }
@@ -230,6 +232,7 @@ export async function resolveReturn(id: string, approve: boolean) {
       }
       setOrderStatus(d, o, "exchanged", `Exchange approved — size ${size} is on its way.`);
     });
+    deliverInBackground();
     touchAdmin();
   });
 }
@@ -373,6 +376,7 @@ export async function deliveryUpdate(orderId: string, status: "out_for_delivery"
       if (o.status !== from[status]) fail(`Order must be ${from[status].replace(/_/g, " ")} first`);
       setOrderStatus(d, o, status, status === "out_for_delivery" ? `${me.name} is on the way with your order.` : undefined);
     });
+    deliverInBackground();
     revalidatePath("/delivery");
   });
 }

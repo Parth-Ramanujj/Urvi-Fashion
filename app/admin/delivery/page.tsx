@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { DEFAULT_DELIVERY } from "@/lib/retention-core";
 import { PageTitle } from "../_ui";
-import { DeliveryForm, RiderCity } from "./Delivery";
+import { AddDeliveryPartner, DeliveryForm, RiderCity } from "./Delivery";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Delivery" };
@@ -50,16 +50,17 @@ export default async function DeliveryAdmin() {
           <section className="card p-5">
             <h2 className="mb-1 font-semibold">Delivery partners</h2>
             <p className="mb-3 text-xs text-zinc-500">Riders are suggested first on orders going to their city.</p>
-            {riders.length === 0 ? <p className="text-sm text-zinc-500">No delivery partners. Set a user's role to Delivery on the Customers page.</p> : (
+            {riders.length === 0 ? <p className="text-sm text-zinc-500">No delivery partners yet.</p> : (
               <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
                 {riders.map((r) => (
                   <li key={r.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
-                    <span className="min-w-0"><span className="block font-medium">{r.name}</span><span className="text-xs text-zinc-500">{d.orders.filter((o) => o.deliveryPartnerId === r.id && OPEN.includes(o.status)).length} open orders</span></span>
+                    <span className="min-w-0"><span className="block font-medium">{r.name}</span><span className="text-xs text-zinc-500">{r.phone ? `${r.phone} · ` : ""}{d.orders.filter((o) => o.deliveryPartnerId === r.id && OPEN.includes(o.status)).length} open orders</span></span>
                     <RiderCity id={r.id} city={r.city ?? ""} cities={cityNames} />
                   </li>
                 ))}
               </ul>
             )}
+            <AddDeliveryPartner cities={cityNames} />
           </section>
         </div>
       </div>

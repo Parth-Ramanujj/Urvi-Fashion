@@ -1,8 +1,8 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "./auth";
-import { newId } from "./crypto";
-import { mutate } from "./db";
+import { hashPassword, newId } from "./crypto";
+import { db, mutate } from "./db";
 import { personalCoupon } from "./retention-core";
 import { fail, run, str } from "./server-utils";
 import type { CityRule, DeliverySettings, MembershipPlan } from "./types";
@@ -113,6 +113,40 @@ export async function setRiderCity(userId: string, city: string | null) {
       u!.city = c || undefined;
     });
     revalidatePath("/admin/delivery"); revalidatePath("/admin/orders");
+  });
+}
+
+export async function createDeliveryPartner(input: { name: string; email: string; phone: string; password: string; city?: string }) {
+  return run(async () => {
+    await requireUser("admin");
+    const name = str(input.name, 80);
+    const email = str(input.email, 120).toLowerCase();
+    const phone = str(input.phone, 15).replace(/\D/g, "").slice(-10);
+    const password = String(input.password ?? "");
+    const city = str(input.city, 40);
+    if (name.length < 2) fail("Enter partner's full name");
+    if (!/^[6-9]\d{9}$/.test(phone)) fail("Enter a valid 10-digit mobile number");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail("Enter a valid email address");
+    if (password.length < 8 || !/\d/.test(password) || !/[a-zA-Z]/.test(password)) fail("Password needs 8+ characters with letters and numbers");
+    if (db().users.some((u) => u.email === email)) fail("An account with this email already exists");
+    if (db().users.some((u) => u.phone === phone)) fail("An account with this mobile number already exists");
+    await mutate((d) => {
+      d.users.push({
+        id: newId(),
+        name,
+        email,
+        phone,
+        passwordHash: hashPassword(password),
+        role: "delivery",
+        blocked: false,
+        city: city || undefined,
+        addresses: [],
+        measurements: {},
+        createdAt: Date.now(),
+        lastActiveAt: Date.now(),
+      });
+    });
+    revalidatePath("/admin/delivery"); revalidatePath("/admin/customers"); revalidatePath("/admin/orders");
   });
 }
 

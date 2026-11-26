@@ -42,6 +42,10 @@ const BASE_EXTRA: Record<string, string> = {
     total NUMERIC(12,2) GENERATED ALWAYS AS ((data->'totals'->>'total')::NUMERIC(12,2)) STORED,
     created_at BIGINT GENERATED ALWAYS AS ((data->>'createdAt')::BIGINT) STORED,
     CONSTRAINT uq_orders_ref UNIQUE (ref)`,
+  integrationMessages: `, user_id VARCHAR(190) GENERATED ALWAYS AS (NULLIF(data->>'userId', 'null')) STORED,
+    channel VARCHAR(20) GENERATED ALWAYS AS (data->>'channel') STORED,
+    status VARCHAR(20) GENERATED ALWAYS AS (data->>'status') STORED,
+    created_at BIGINT GENERATED ALWAYS AS ((data->>'createdAt')::BIGINT) STORED`,
 };
 
 const BASE_INDEXES: Record<string, string[]> = {
@@ -49,6 +53,11 @@ const BASE_INDEXES: Record<string, string[]> = {
   orders: [
     `CREATE INDEX IF NOT EXISTS ix_orders_user ON orders (user_id)`,
     `CREATE INDEX IF NOT EXISTS ix_orders_status ON orders (status)`,
+  ],
+  integrationMessages: [
+    `CREATE INDEX IF NOT EXISTS ix_integration_messages_user ON integration_messages (user_id)`,
+    `CREATE INDEX IF NOT EXISTS ix_integration_messages_status ON integration_messages (status)`,
+    `CREATE INDEX IF NOT EXISTS ix_integration_messages_created ON integration_messages (created_at)`,
   ],
 };
 
@@ -139,6 +148,24 @@ export const MIGRATIONS: { version: number; name: string; up: (q: Q) => Promise<
       await q.query(`CREATE OR REPLACE VIEW v_daily_sales AS
         SELECT DATE(to_timestamp(created_at / 1000.0)) AS day, COUNT(*)::INT AS orders, SUM(total) AS revenue
         FROM orders WHERE status NOT IN ('cancelled', 'returned') GROUP BY day`);
+    },
+  },
+  {
+    version: 5, name: "whatsapp / social CRM",
+    async up(q) {
+      await q.query(`CREATE TABLE IF NOT EXISTS "integration_messages" (id VARCHAR(190) NOT NULL PRIMARY KEY, pos INT NOT NULL, data JSONB NOT NULL${BASE_EXTRA.integrationMessages ?? ""})`);
+      const cols: [string, string, string][] = [
+        ["user_id", "VARCHAR(190)", "NULLIF(data->>'userId', 'null')"],
+        ["channel", "VARCHAR(20)", "data->>'channel'"],
+        ["status", "VARCHAR(20)", "data->>'status'"],
+        ["created_at", "BIGINT", "(data->>'createdAt')::BIGINT"],
+      ];
+      for (const [column, type, expr] of cols) {
+        if (!(await hasColumn(q, "integration_messages", column))) {
+          await q.query(`ALTER TABLE "integration_messages" ADD COLUMN "${column}" ${type} GENERATED ALWAYS AS (${expr}) STORED`);
+        }
+      }
+      for (const ix of BASE_INDEXES.integrationMessages ?? []) await q.query(ix);
     },
   },
 ];

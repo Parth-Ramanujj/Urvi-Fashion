@@ -1,7 +1,9 @@
 "use server";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
+import { queueAutomation, storeUrl } from "./automation-core";
 import { currentUser, endSession, requireUser, startSession } from "./auth";
+import { deliverInBackground, trackMetaPurchaseInBackground } from "./integrations";
 import { hashPassword, hmac, newId, orderRef, safeEqual, verifyPassword } from "./crypto";
 import { activePlan, creditCoins, grantBirthday, maxRedeemable, newReferralCode } from "./retention-core";
 import { db, mutate } from "./db";
@@ -70,8 +72,10 @@ export async function register(input: { name: string; email: string; phone: stri
       const u: User = { id, name, email, phone, passwordHash: hashPassword(password), role: "customer", blocked: false, addresses: [], measurements: {}, createdAt: Date.now(), lastActiveAt: Date.now() };
       d.users.push(u);
       onboard(d, u, input.ref);
+      queueAutomation(d, "welcome", u, { link: storeUrl("/shop") });
       recordActivity(d, { kind: "register", userId: id, userName: name, meta: phone });
     });
+    deliverInBackground();
     await startSession(id);
     return { role: "customer" as const };
   });
@@ -146,6 +150,7 @@ export async function verifyOtp(input: { phone: string; code: string; name?: str
         u = { id: newId(), name: str(input.name, 80) || `Shopper ${phone.slice(-4)}`, phone, role: "customer", blocked: false, addresses: [], measurements: {}, createdAt: Date.now(), lastActiveAt: Date.now() };
         d.users.push(u);
         onboard(d, u, input.ref);
+        queueAutomation(d, "welcome", u, { link: storeUrl("/shop") });
         recordActivity(d, { kind: "register", userId: u.id, userName: u.name, meta: `${phone} (OTP)` });
       } else {
         u.lastActiveAt = Date.now();
@@ -153,6 +158,7 @@ export async function verifyOtp(input: { phone: string; code: string; name?: str
       }
       return u.id;
     });
+    deliverInBackground();
     await startSession(userId);
     return { role: db().users.find((u) => u.id === userId)!.role };
   });
@@ -367,7 +373,19 @@ export async function placeOrder(input: {
         timeline: [{ status: "placed", at: now }], createdAt: now, eta: now + Math.max(1, r.dq.options[speed].days[1]) * 86_400_000,
       });
       d.notifications.push({ id: newId(), userId: me.id, title: "Order confirmed 🎉", body: "We've received your order and will pack it shortly.", href: `/account/orders/${id}`, createdAt: now, readBy: [] });
+      queueAutomation(d, "order_placed", user, { orderRef: ref, orderTotal: `₹${r.totals.total}`, link: storeUrl(`/account/orders/${id}`) });
       recordActivity(d, { kind: "order_place", userId: me.id, userName: me.name, meta: `${ref} · ₹${r.totals.total} · ${input.method.toUpperCase()} (${r.valid.length} items)` });
+    });
+    deliverInBackground();
+    trackMetaPurchaseInBackground({
+      eventId: id,
+      value: r.totals.total,
+      email: me.email,
+      phone: address!.phone || me.phone,
+      productIds: r.valid.map((l) => l.p!.id),
+      contents: r.valid.map((l) => ({ id: l.p!.id, quantity: l.qty, item_price: l.price })),
+      orderId: id,
+      sourceUrl: storeUrl(`/account/orders/${id}`),
     });
     revalidatePath("/", "layout");
     return { id };

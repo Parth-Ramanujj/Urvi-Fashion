@@ -2,6 +2,7 @@
 // Pure functions over the DB object (no I/O) so they can run inside mutate().
 import { randomBytes } from "node:crypto";
 import { DEFAULT_BRAND } from "./brand.ts";
+import { mergeIntegrationDefaults, queueAutomation, storeUrl } from "./automation-core.ts";
 import type { DB, DeliverySettings, MembershipPlan, Order, RetentionSettings, Tier, User } from "./types";
 
 export const DEFAULT_DELIVERY: DeliverySettings = {
@@ -55,6 +56,12 @@ export function migrate(d: DB) {
   if (!d.waitlist) { d.waitlist = []; changed = true; }
   if (!d.delivery) { d.delivery = structuredClone(DEFAULT_DELIVERY); changed = true; }
   if (!d.memberships) { d.memberships = []; changed = true; }
+  if (!d.integrationMessages) { d.integrationMessages = []; changed = true; }
+  if (!d.integrations) { d.integrations = mergeIntegrationDefaults(undefined); changed = true; }
+  else {
+    const merged = mergeIntegrationDefaults(d.integrations);
+    if (JSON.stringify(merged) !== JSON.stringify(d.integrations)) { d.integrations = merged; changed = true; }
+  }
   if (!d.brand) { d.brand = structuredClone(DEFAULT_BRAND); changed = true; }
   else for (const k of Object.keys(DEFAULT_BRAND) as (keyof typeof DEFAULT_BRAND)[]) if (d.brand[k] === undefined) { (d.brand as unknown as Record<string, unknown>)[k] = structuredClone(DEFAULT_BRAND[k]); changed = true; }
   for (const k of ["membership", "birthday", "social"] as const) if (!d.retention[k]) { (d.retention as unknown as Record<string, unknown>)[k] = structuredClone(DEFAULT_RETENTION[k]); changed = true; }
@@ -62,6 +69,7 @@ export function migrate(d: DB) {
   for (const u of d.users) {
     if (u.coins === undefined) { u.coins = 0; changed = true; }
     if (!u.referralCode) { u.referralCode = newReferralCode(u.name); changed = true; }
+    if (!u.crm) { u.crm = { whatsappOptIn: true }; changed = true; }
   }
   return changed;
 }
@@ -139,7 +147,10 @@ export function processWaitlist(d: DB) {
     const v = p?.variants.find((x) => x.color === w.color && x.size === w.size);
     if (!p || !p.active || !v || v.stock <= 0) continue;
     w.notifiedAt = Date.now();
-    note(d, w.userId, "Back in stock! 🔔", `${p.name} (${w.color}, ${w.size}) is available again — grab it before it sells out.`, `/product/${p.slug}?color=${encodeURIComponent(w.color)}`);
+    const href = `/product/${p.slug}?color=${encodeURIComponent(w.color)}`;
+    note(d, w.userId, "Back in stock! 🔔", `${p.name} (${w.color}, ${w.size}) is available again — grab it before it sells out.`, href);
+    const u = d.users.find((x) => x.id === w.userId);
+    queueAutomation(d, "back_in_stock", u, { product: p.name, color: w.color, size: w.size, link: storeUrl(href) });
   }
 }
 

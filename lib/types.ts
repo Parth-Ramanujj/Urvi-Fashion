@@ -85,6 +85,8 @@ export interface User {
   socialClaimed?: string[];
   /** Delivery partners: the city they serve. */
   city?: string;
+  /** CRM profile used by the WhatsApp / social integration. */
+  crm?: CrmProfile;
 }
 
 export type OrderStatus =
@@ -185,6 +187,126 @@ export interface DB {
   memberships?: MembershipPurchase[];
   brand?: Brand;
   analytics?: AnalyticsEvent[];
+  integrations?: IntegrationSettings;
+  integrationMessages?: IntegrationMessage[];
+}
+
+/* ---------------- WhatsApp / social CRM ---------------- */
+export type IntegrationChannel = "whatsapp" | "instagram" | "facebook" | "messenger" | "telegram" | "youtube" | "system";
+export type AutomationKey =
+  | "welcome"
+  | "order_placed"
+  | "order_shipped"
+  | "order_delivered"
+  | "abandoned_cart"
+  | "back_in_stock"
+  | "return_update";
+
+export interface WhatsAppAutoReplyRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  /** Case-insensitive words/phrases; any match triggers the reply. */
+  keywords: string[];
+  reply: string;
+  /** At most one automatic reply per customer per day. */
+  oncePerDay?: boolean;
+}
+
+export interface Automation {
+  id: string;
+  key: AutomationKey;
+  name: string;
+  channel: "whatsapp";
+  enabled: boolean;
+  /** Delay before delivery; 0 sends on the next background run. */
+  delayMinutes: number;
+  /** Supports {{name}}, {{first}}, {{brand}}, {{orderRef}}, {{orderTotal}}, {{status}}, {{product}}, {{size}}, {{color}}, {{link}}. */
+  template: string;
+  lastRunAt?: number;
+  sent?: number;
+}
+
+export interface IntegrationMessage {
+  id: string;
+  channel: IntegrationChannel;
+  direction: "out" | "in";
+  /** WhatsApp phone digits or social handle. */
+  to?: string;
+  from?: string;
+  userId?: string;
+  automation?: string;
+  body: string;
+  status: "queued" | "sending" | "sent" | "failed" | "received" | "skipped";
+  error?: string;
+  providerId?: string;
+  accountId?: string;
+  threadId?: string;
+  createdAt: number;
+  sentAt?: number;
+  claimedAt?: number;
+}
+
+export interface CrmProfile {
+  /** Defaults to opted in; an explicit false blocks every automatic WhatsApp message. */
+  whatsappOptIn?: boolean;
+  tags?: string[];
+  notes?: { id: string; body: string; at: number; by: string }[];
+  source?: string;
+  lastContactedAt?: number;
+  lastInboundAt?: number;
+}
+
+export interface IntegrationSettings {
+  whatsapp: {
+    enabled: boolean;
+    baseUrl: string;
+    apiKey: string;
+    sessionId: string;
+    webhookSecret: string;
+    autoReply: boolean;
+    defaultCountryCode: string;
+    rules: WhatsAppAutoReplyRule[];
+  };
+  social: {
+    enabled: boolean;
+    autoReply: boolean;
+    defaultReply: string;
+    /** Artha social account ids the admin wants to see first. */
+    accounts: string[];
+  };
+  meta: {
+    enabled: boolean;
+    pixelId: string;
+    capiToken: string;
+    adsToken: string;
+    adAccountId: string;
+    pageId: string;
+    testEventCode: string;
+  };
+  automations: Automation[];
+  lastSyncAt?: number;
+  lastWebhookAt?: number;
+  updatedAt?: number;
+}
+
+/** Sanitised settings sent to the admin UI (secrets never leave the server). */
+export interface IntegrationView {
+  whatsapp: Omit<IntegrationSettings["whatsapp"], "apiKey" | "webhookSecret"> & {
+    apiKeyMasked: string;
+    webhookSecretSet: boolean;
+    configured: boolean;
+  };
+  social: IntegrationSettings["social"];
+  meta: Omit<IntegrationSettings["meta"], "capiToken" | "adsToken"> & {
+    capiConfigured: boolean;
+    adsConfigured: boolean;
+  };
+  automations: Automation[];
+  webhookUrl: string;
+  lastSyncAt?: number;
+  lastWebhookAt?: number;
+  updatedAt?: number;
 }
 
 export type AnalyticsKind =

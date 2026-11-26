@@ -2,9 +2,11 @@
 import { revalidatePath } from "next/cache";
 import { randomBytes } from "node:crypto";
 import { segmentCustomers, SEGMENTS, type Segment } from "@/app/admin/retention/segments";
+import { queueAutomation, storeUrl } from "./automation-core";
 import { requireUser } from "./auth";
 import { newId } from "./crypto";
 import { mutate } from "./db";
+import { deliverInBackground } from "./integrations";
 import { creditCoins } from "./retention-core";
 import { fail, run, str } from "./server-utils";
 import type { RetentionSettings } from "./types";
@@ -120,13 +122,16 @@ export async function remindAbandonedCarts(userIds: string[], couponCode?: strin
         const c = u.cart;
         if (!ids.has(u.id) || u.blocked || !c?.items.length || c.updatedAt > cutoff || (c.remindedAt && c.remindedAt >= c.updatedAt)) continue;
         const names = c.items.map((i) => i.name);
-        d.notifications.push({ id: newId(), userId: u.id, title: "You left something in your bag 👜", body: `${names.slice(0, 2).join(", ")}${names.length > 2 ? ` +${names.length - 2} more` : ""} — still waiting for you.${code ? ` Use code ${code} at checkout.` : ""}`, href: "/cart", createdAt: Date.now(), readBy: [] });
+        const product = `${names.slice(0, 2).join(", ")}${names.length > 2 ? ` +${names.length - 2} more` : ""}`;
+        d.notifications.push({ id: newId(), userId: u.id, title: "You left something in your bag 👜", body: `${product} — still waiting for you.${code ? ` Use code ${code} at checkout.` : ""}`, href: "/cart", createdAt: Date.now(), readBy: [] });
+        queueAutomation(d, "abandoned_cart", u, { product, link: storeUrl("/cart") });
         c.remindedAt = Date.now();
         n++;
       }
       return n;
     });
     if (!count) fail("No eligible bags — they may be too recent or already reminded");
+    deliverInBackground();
     revalidatePath("/admin/retention");
     return { count };
   });

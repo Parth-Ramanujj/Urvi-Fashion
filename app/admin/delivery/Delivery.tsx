@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { saveDeliverySettings, setRiderCity } from "@/lib/admin-extra-actions";
+import { createDeliveryPartner, saveDeliverySettings, setRiderCity } from "@/lib/admin-extra-actions";
 import type { CityRule, DeliverySettings } from "@/lib/types";
 import { useAct } from "../_ui";
 import { Num, Toggle } from "../retention/Retention";
@@ -63,5 +63,48 @@ export function RiderCity({ id, city, cities }: { id: string; city: string; citi
       <option value="">Any city</option>
       {[...new Set([...cities, ...(city ? [city] : [])])].map((c) => <option key={c} value={c}>{c}</option>)}
     </select>
+  );
+}
+
+export function AddDeliveryPartner({ cities }: { cities: string[] }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [city, setCity] = useState("");
+  const { pending, act } = useAct();
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    act(() => createDeliveryPartner({ name, phone, email, password, city }), "Delivery partner added", () => {
+      setName(""); setPhone(""); setEmail(""); setPassword(""); setCity(""); setOpen(false);
+    });
+  };
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="btn-primary mt-3 w-full py-2 text-xs">
+        <Plus className="size-3.5" /> Add delivery partner
+      </button>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="mt-3 space-y-2.5 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900/50">
+      <p className="font-semibold text-sm">New delivery partner</p>
+      <input required minLength={2} value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" className="input py-1.5 text-xs" />
+      <input required inputMode="numeric" maxLength={10} value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="10-digit mobile number" className="input py-1.5 text-xs" />
+      <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (for login)" className="input py-1.5 text-xs" />
+      <input required type="password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password (8+ chars, letters & numbers)" className="input py-1.5 text-xs" />
+      <select value={city} onChange={(e) => setCity(e.target.value)} className="input py-1.5 text-xs" aria-label="Assigned city">
+        <option value="">Any city</option>
+        {cities.map((c) => <option key={c} value={c}>{c}</option>)}
+      </select>
+      <div className="flex gap-2">
+        <button disabled={pending} className="btn-primary flex-1 py-1.5 text-xs">{pending ? "Creating…" : "Create partner"}</button>
+        <button type="button" onClick={() => setOpen(false)} className="btn-ghost py-1.5 text-xs">Cancel</button>
+      </div>
+    </form>
   );
 }

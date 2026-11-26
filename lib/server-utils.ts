@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { cookies } from "next/headers";
+import { queueAutomation, storeUrl } from "./automation-core";
 import { HttpError } from "./auth";
 import { newId } from "./crypto";
 import { db, UPLOAD_DIR } from "./db";
@@ -105,7 +106,13 @@ export function setOrderStatus(d: DB, o: Order, status: OrderStatus, note?: stri
   }
   if (status === "delivered" && o.payment.method === "cod") o.payment.status = "paid";
   if (status === "delivered") onDelivered(d, o);
-  d.notifications.push({ id: newId(), userId: o.userId, title: `${STATUS_LABEL[status]} · ${o.ref}`, body: note || `Your order ${o.ref} is now ${STATUS_LABEL[status].toLowerCase()}.`, href: `/account/orders/${o.id}`, createdAt: Date.now(), readBy: [] });
+  const href = `/account/orders/${o.id}`;
+  d.notifications.push({ id: newId(), userId: o.userId, title: `${STATUS_LABEL[status]} · ${o.ref}`, body: note || `Your order ${o.ref} is now ${STATUS_LABEL[status].toLowerCase()}.`, href, createdAt: Date.now(), readBy: [] });
+  const user = d.users.find((u) => u.id === o.userId);
+  const vars = { orderRef: o.ref, orderTotal: `₹${o.totals.total}`, status: STATUS_LABEL[status], note: note ?? "", link: storeUrl(href) };
+  if (status === "shipped") queueAutomation(d, "order_shipped", user, vars);
+  else if (status === "delivered") queueAutomation(d, "order_delivered", user, vars);
+  else if (["return_requested", "returned", "exchange_requested", "exchanged", "return_rejected"].includes(status)) queueAutomation(d, "return_update", user, vars);
 }
 
 /** Append an activity event to the analytics feed (capped at 3000). Enriches product name/slug when productId is given. Call inside mutate(). */

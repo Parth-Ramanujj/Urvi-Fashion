@@ -7,9 +7,10 @@ export const COLLECTIONS = {
   users: ["users", "id"], products: ["products", "id"], orders: ["orders", "id"], reviews: ["reviews", "id"],
   coupons: ["coupons", "code"], banners: ["banners", "id"], notifications: ["notifications", "id"], campaigns: ["campaigns", "id"],
   tickets: ["tickets", "id"], otps: ["otps", "phone"], coinLedger: ["coin_ledger", "id"], waitlist: ["waitlist", "id"], memberships: ["memberships", "id"],
+  integrationMessages: ["integration_messages", "id"],
 } as const satisfies Partial<Record<keyof DB, readonly [string, string]>>;
 /** Single-value settings, stored as rows of the `settings` table. */
-export const SETTINGS = ["version", "secret", "retention", "delivery", "brand", "analytics"] as const satisfies readonly (keyof DB)[];
+export const SETTINGS = ["version", "secret", "retention", "delivery", "brand", "analytics", "integrations"] as const satisfies readonly (keyof DB)[];
 
 export type Row = { id: string; pos: number; json: string };
 /** table → id → "pos\u0000json": what MySQL currently holds (as of the last commit). */
