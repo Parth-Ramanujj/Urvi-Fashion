@@ -63,7 +63,7 @@ export default async function Home() {
 
   return (
     <div className="md:pt-4">
-      <MobileTop defaultPin={user?.addresses.find((a) => a.isDefault)?.pincode} />
+      <MobileTop />
       {flat && <div className="mt-4 md:mx-auto md:mb-4 md:max-w-7xl md:px-4"><CouponStrip code={flat.code} headline={`FLAT ₹${flat.value} OFF`} note={flat.description} /></div>}
       <div className="mx-auto mt-3 max-w-7xl px-2 md:mt-0 md:px-4"><HeroCarousel banners={d.banners.filter((b) => b.active !== false)} /></div>
       <div className="mt-4 space-y-3 md:mx-auto md:max-w-7xl md:px-4">

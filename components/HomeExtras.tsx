@@ -1,39 +1,15 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, MapPin, Percent, Truck } from "lucide-react";
+import { ChevronRight, Percent, Truck } from "lucide-react";
 import { DELIVERY } from "@/lib/pricing";
 import ProductImage from "./ProductImage";
 import { useApp } from "./Providers";
 import SearchBar from "./SearchBar";
 
-/** Mobile "deliver to" PIN bar + full-width search, shown at the top of the home page. */
-export function MobileTop({ defaultPin }: { defaultPin?: string }) {
-  const [pin, setPin] = useState(defaultPin ?? "");
-  const [edit, setEdit] = useState(false);
-  const [draft, setDraft] = useState("");
-  useEffect(() => { try { const s = localStorage.getItem("th_pin"); if (s) setPin(s); } catch {} }, []);
-  const eta = new Date(Date.now() + DELIVERY.standard.days[1] * 86_400_000).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
-  const save = () => {
-    if (!/^[1-9]\d{5}$/.test(draft)) return;
-    setPin(draft); setEdit(false);
-    try { localStorage.setItem("th_pin", draft); } catch {}
-  };
+/** Mobile full-width search bar shown at the top of the home page. */
+export function MobileTop() {
   return (
-    <div className="md:hidden">
-      <button onClick={() => { setDraft(pin); setEdit(!edit); }} className="flex w-full items-center gap-2 bg-violet-50 px-4 py-2.5 text-left dark:bg-violet-950/40" aria-expanded={edit}>
-        <MapPin className="size-4 fill-zinc-800 text-violet-50 dark:fill-zinc-200 dark:text-violet-950" />
-        {pin ? <span className="text-sm"><b>{pin}</b><span className="ml-2 text-xs text-zinc-500">Delivery by {eta}</span></span> : <span className="text-sm font-semibold">Enter delivery PIN code</span>}
-        <ChevronDown className={`ml-auto size-5 transition ${edit ? "rotate-180" : ""}`} />
-      </button>
-      {edit && (
-        <form onSubmit={(e) => { e.preventDefault(); save(); }} className="flex animate-fade-in gap-2 bg-violet-50 px-4 pb-3 dark:bg-violet-950/40">
-          <input value={draft} onChange={(e) => setDraft(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="postal-code" placeholder="6-digit PIN code" className="input bg-white" aria-label="PIN code" autoFocus />
-          <button disabled={!/^[1-9]\d{5}$/.test(draft)} className="btn-primary px-4">Check</button>
-        </form>
-      )}
-      <div className="px-4 pt-3 [&_form]:h-12 [&_form]:rounded-full [&_form]:border-zinc-200 [&_form]:bg-white [&_form]:shadow-[0_2px_10px_rgba(0,0,0,0.08)] dark:[&_form]:border-zinc-800 dark:[&_form]:bg-zinc-900"><SearchBar /></div>
-    </div>
+    <div className="px-4 pt-3 md:hidden [&_form]:h-12 [&_form]:rounded-full [&_form]:border-zinc-200 [&_form]:bg-white [&_form]:shadow-[0_2px_10px_rgba(0,0,0,0.08)] dark:[&_form]:border-zinc-800 dark:[&_form]:bg-zinc-900"><SearchBar /></div>
   );
 }
 
