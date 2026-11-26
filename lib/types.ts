@@ -184,6 +184,20 @@ export interface DB {
   delivery?: DeliverySettings;
   memberships?: MembershipPurchase[];
   brand?: Brand;
+  analytics?: AnalyticsEvent[];
+}
+
+export type AnalyticsKind = "product_view" | "add_to_cart" | "wishlist_add" | "search" | "checkout_start";
+export interface AnalyticsEvent {
+  id: string;
+  kind: AnalyticsKind;
+  userId?: string;
+  userName?: string;
+  productId?: string;
+  productName?: string;
+  slug?: string;
+  meta?: string;
+  at: number;
 }
 
 export interface MembershipPlan { id: string; name: string; price: number; days: number; discountPct: number; freeDelivery: boolean; coinMultiplier: number; color: string; active: boolean; tagline: string }

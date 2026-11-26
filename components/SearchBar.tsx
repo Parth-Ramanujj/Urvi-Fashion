@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Mic, Search, X } from "lucide-react";
 import { suggest } from "@/lib/actions";
 import ProductImage from "./ProductImage";
-import { useApp } from "./Providers";
+import { trackEvent, useApp } from "./Providers";
 import { Money } from "./ui";
 
 type Sugg = Awaited<ReturnType<typeof suggest>>;
@@ -37,6 +37,7 @@ export default function SearchBar({ autoFocus, onDone }: { autoFocus?: boolean; 
 
   const go = (term: string) => {
     if (!term.trim()) return;
+    trackEvent("search", { meta: term.trim() });
     setOpen(false); onDone?.();
     router.push(`/shop?q=${encodeURIComponent(term.trim())}`);
   };

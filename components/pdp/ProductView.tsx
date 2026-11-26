@@ -1,13 +1,13 @@
 "use client";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BadgeCheck, Bell, ChevronDown, Heart, Minus, Plus, Ruler, Share2, ShoppingBag, Truck, Zap } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { joinWaitlist } from "@/lib/actions";
 import { DELIVERY, RETURN_WINDOW_DAYS } from "@/lib/pricing";
 import { chartFor, recommendSize } from "@/lib/sizes";
 import type { Measurements, Product } from "@/lib/types";
-import { useApp } from "../Providers";
+import { trackEvent, useApp } from "../Providers";
 import { Countdown, Modal, Money, Stars } from "../ui";
 import Gallery from "./Gallery";
 
@@ -17,6 +17,7 @@ export default function ProductView({ p, initialColor, measurements }: { p: P; i
   const { addToCart, setCartOpen, wishlist, toggleWish, toast, t, user } = useApp();
   const router = useRouter();
   const [alerted, setAlerted] = useState<string[]>([]);
+  useEffect(() => { trackEvent("product_view", { productId: p.id, productName: p.name, slug: p.slug }); }, [p.id, p.name, p.slug]);
   const [color, setColor] = useState(initialColor);
   const [size, setSize] = useState<string | null>(p.sizes.length === 1 ? p.sizes[0] : null);
   const [qty, setQty] = useState(1);

@@ -6,7 +6,7 @@ import { Banknote, Building2, Check, CreditCard, Loader2, Lock, MapPin, Plus, Sh
 import AddressForm from "@/components/AddressForm";
 import { CoinsToggle, CouponBox, PriceSummary } from "@/components/PriceSummary";
 import ProductImage from "@/components/ProductImage";
-import { useApp } from "@/components/Providers";
+import { trackEvent, useApp } from "@/components/Providers";
 import { useQuote } from "@/components/useQuote";
 import { Empty, Money } from "@/components/ui";
 import { placeOrder } from "@/lib/actions";
@@ -46,6 +46,7 @@ export default function Checkout({ addresses: initial }: { addresses: Address[] 
   const [pay, setPay] = useState({ upi: "", card: "", name: "", exp: "", cvv: "", bank: "", wallet: "" });
   const [processing, setProcessing] = useState(false);
   useEffect(() => { try { setCoupon(sessionStorage.getItem("th_coupon") ?? ""); } catch {} }, []);
+  useEffect(() => { if (cart.length) trackEvent("checkout_start", { meta: `${cart.length} items` }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const { q, loading } = useQuote(coupon, speed, useCoins, addressId);
   const dq = q?.delivery;
   // Fall back to standard / online payment when the chosen city doesn't offer express / COD.

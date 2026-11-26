@@ -31,6 +31,11 @@ function load<T>(key: string, fallback: T): T {
 function save(key: string, v: unknown) {
   try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* private mode: keep in memory */ }
 }
+export function trackEvent(kind: "product_view" | "add_to_cart" | "wishlist_add" | "search" | "checkout_start", data: { productId?: string; productName?: string; slug?: string; meta?: string } = {}) {
+  try {
+    fetch("/api/analytics", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, ...data }), keepalive: true }).catch(() => {});
+  } catch {}
+}
 
 export default function Providers({ children, user, lang, currency, theme: initialTheme, brand }: { children: React.ReactNode; user: PublicUser | null; lang: Lang; currency: Currency; theme: string; brand: Brand }) {
   const router = useRouter();
@@ -87,12 +92,15 @@ export default function Providers({ children, user, lang, currency, theme: initi
   const value = useMemo<Ctx>(() => ({
     brand, user, lang, currency, theme, t: translator(lang), money: (v) => formatMoney(v, currency), setPref,
     cart, cartCount: cart.reduce((s, l) => s + l.qty, 0), cartOpen, setCartOpen,
-    addToCart: (l) => setCart((c) => {
-      const ex = c.find((x) => x.sku === l.sku);
-      const next = ex ? c.map((x) => (x.sku === l.sku ? { ...x, qty: Math.min(10, x.qty + l.qty) } : x)) : [...c, l];
-      save("th_cart", next);
-      return next;
-    }),
+    addToCart: (l) => {
+      trackEvent("add_to_cart", { productId: l.productId, productName: l.name, slug: l.slug, meta: `${l.color}, ${l.size} × ${l.qty}` });
+      setCart((c) => {
+        const ex = c.find((x) => x.sku === l.sku);
+        const next = ex ? c.map((x) => (x.sku === l.sku ? { ...x, qty: Math.min(10, x.qty + l.qty) } : x)) : [...c, l];
+        save("th_cart", next);
+        return next;
+      });
+    },
     setQty: (sku, qty) => setCart((c) => { const next = c.map((x) => (x.sku === sku ? { ...x, qty: Math.max(1, Math.min(10, qty)) } : x)); save("th_cart", next); return next; }),
     removeFromCart: (sku) => setCart((c) => { const next = c.filter((x) => x.sku !== sku); save("th_cart", next); return next; }),
     clearCart: () => { save("th_cart", []); setCart([]); },
