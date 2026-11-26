@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { flashActive, unitPrice } from "@/lib/pricing";
 import { CATEGORIES } from "@/lib/types";
 import { PageTitle } from "../_ui";
+import BulkImport from "./BulkImport";
 import { DeleteProduct } from "./DeleteProduct";
 
 export default async function Products({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
@@ -20,7 +21,7 @@ export default async function Products({ searchParams }: { searchParams: Promise
 
   return (
     <div>
-      <PageTitle title="Products"><Link href="/admin/products/new" className="btn-brand"><Plus className="size-4" />Add product</Link></PageTitle>
+      <PageTitle title="Products"><div className="flex flex-wrap gap-2"><BulkImport /><Link href="/admin/products/new" className="btn-brand"><Plus className="size-4" />Add product</Link></div></PageTitle>
       <form className="card mb-4 flex flex-wrap gap-2 p-3">
         <label className="relative min-w-48 flex-1"><span className="sr-only">Search products</span><Search className="absolute left-3 top-3 size-4 text-zinc-400" /><input name="q" defaultValue={q} placeholder="Search name, brand, ID…" className="input pl-9" /></label>
         <select name="category" defaultValue={category} className="input w-auto" aria-label="Category"><option value="">All categories</option>{CATEGORIES.map((c) => <option key={c} value={c} className="capitalize">{c}</option>)}</select>

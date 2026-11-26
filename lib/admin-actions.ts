@@ -110,6 +110,85 @@ export async function updateStock(productId: string, sku: string, stock: number)
   });
 }
 
+function parseCsvRows(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [], cell = "", inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (ch === '"') inQ = false;
+      else cell += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === ",") { row.push(cell.trim()); cell = ""; }
+    else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = []; cell = "";
+    } else cell += ch;
+  }
+  row.push(cell.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows;
+}
+
+/** Bulk-import products from a CSV string in a single transaction. */
+export async function bulkImportProducts(csvText: string) {
+  return run(async () => {
+    await requireUser("admin");
+    const rows = parseCsvRows(String(csvText ?? ""));
+    if (rows.length < 2) fail("CSV needs a header row and at least 1 product row");
+    const hdr = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, "_"));
+    const col = (r: string[], name: string) => r[hdr.indexOf(name)] ?? "";
+    const errors: string[] = [];
+    const toAdd: Product[] = [];
+    const now = Date.now();
+
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      const name = str(col(r, "name"), 120), brand = str(col(r, "brand"), 60);
+      const cat = str(col(r, "category"), 20).toLowerCase();
+      const kindRaw = str(col(r, "kind") || "tee", 20).toLowerCase();
+      const kind = (ART_KINDS.includes(kindRaw as never) ? kindRaw : "tee") as Product["kind"];
+      const mrp = num(col(r, "mrp"), 1), price = num(col(r, "price"), 1);
+      if (name.length < 2 || !brand) { errors.push(`Row ${i + 1}: name and brand are required`); continue; }
+      if (!CATEGORIES.includes(cat as never)) { errors.push(`Row ${i + 1}: category must be one of ${CATEGORIES.join(", ")}`); continue; }
+      if (Number.isNaN(mrp) || Number.isNaN(price) || price > mrp) { errors.push(`Row ${i + 1}: invalid mrp/price`); continue; }
+      const sizesRaw = (col(r, "sizes") || "S,M,L,XL").split(/[|,/]+/).map((s) => s.trim().toUpperCase());
+      const sizes = ALL_SIZES.filter((s) => sizesRaw.includes(s.toUpperCase()));
+      if (!sizes.length) sizes.push("S", "M", "L", "XL");
+      const colorsRaw = (col(r, "colors") || "Black:#1c1c1e").split(/[|,]+/).map((s) => s.trim()).filter(Boolean);
+      const imgUrl = str(col(r, "image_url"), 400);
+      const validImg = imgUrl && /^https?:\/\//.test(imgUrl) ? imgUrl : "";
+      const colors: Product["colors"] = colorsRaw.slice(0, 12).map((c) => {
+        const [cn, ch] = c.split(":");
+        const hex = HEX.test(ch ?? "") ? ch!.toLowerCase() : "#1c1c1e";
+        return { name: str(cn || "Default", 30), hex, images: validImg ? [validImg] : artImages(kind, hex) };
+      });
+      const stock = Math.max(0, Math.min(100000, Math.round(Number(col(r, "stock")) || 10)));
+      const slugBase = slugify(name) || `item-${i}`;
+      const slug = `${slugBase}-${newId(3).toLowerCase()}`;
+      const skuBase = slug.slice(0, 10).toUpperCase();
+      const variants: Variant[] = colors.flatMap((c) => sizes.map((size) => ({
+        sku: `${skuBase}-${c.name.replace(/\W/g, "").toUpperCase()}-${size}`, color: c.name, size, stock,
+      })));
+      toAdd.push({
+        id: `p${newId(5)}`, slug, name, brand, category: cat as Product["category"],
+        subcategory: str(col(r, "subcategory"), 40) || "General", kind,
+        fabric: str(col(r, "fabric"), 40) || "Cotton",
+        description: str(col(r, "description"), 2000) || `${name} by ${brand}.`,
+        details: ["Easy 14-day returns & exchanges"],
+        mrp, price, colors, sizes, variants, rating: 0, ratingCount: 0, sold: 0, views: 0, createdAt: now + i, flashSale: null, active: true,
+      });
+    }
+    if (!toAdd.length) fail(errors[0] || "No valid products found in CSV");
+    await mutate((d) => { d.products.push(...toAdd); });
+    touchAdmin();
+    return { imported: toAdd.length, errors: errors.slice(0, 10) };
+  });
+}
+
 /* ---------------- Orders ---------------- */
 export async function updateOrder(id: string, input: { status?: OrderStatus; deliveryPartnerId?: string }) {
   return run(async () => {
