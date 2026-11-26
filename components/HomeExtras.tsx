@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ChevronRight, Percent, Truck } from "lucide-react";
 import { DELIVERY } from "@/lib/pricing";
 import ProductImage from "./ProductImage";
-import { useApp } from "./Providers";
+import { trackEvent, useApp } from "./Providers";
 import SearchBar from "./SearchBar";
 
 /** Mobile full-width search bar shown at the top of the home page. */
@@ -17,6 +17,7 @@ export function MobileTop() {
 export function CouponStrip({ code, headline, note }: { code: string; headline: string; note: string }) {
   const { toast } = useApp();
   const claim = () => {
+    trackEvent("coupon_apply", { meta: code });
     try { sessionStorage.setItem("th_coupon", code); } catch {}
     navigator.clipboard?.writeText(code).catch(() => {});
     toast(`${code} claimed — it'll be applied in your bag`);

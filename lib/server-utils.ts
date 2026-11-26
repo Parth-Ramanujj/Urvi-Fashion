@@ -8,7 +8,7 @@ import { newId } from "./crypto";
 import { db, UPLOAD_DIR } from "./db";
 import { onDelivered, onReversed } from "./retention-core";
 import { CURRENCIES, LANGS, translator, type Currency, type Lang } from "./i18n";
-import type { DB, Order, OrderStatus } from "./types";
+import type { AnalyticsEvent, DB, Order, OrderStatus } from "./types";
 
 export type Result<T = undefined> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -106,4 +106,19 @@ export function setOrderStatus(d: DB, o: Order, status: OrderStatus, note?: stri
   if (status === "delivered" && o.payment.method === "cod") o.payment.status = "paid";
   if (status === "delivered") onDelivered(d, o);
   d.notifications.push({ id: newId(), userId: o.userId, title: `${STATUS_LABEL[status]} · ${o.ref}`, body: note || `Your order ${o.ref} is now ${STATUS_LABEL[status].toLowerCase()}.`, href: `/account/orders/${o.id}`, createdAt: Date.now(), readBy: [] });
+}
+
+/** Append an activity event to the analytics feed (capped at 3000). Enriches product name/slug when productId is given. Call inside mutate(). */
+export function recordActivity(d: DB, event: Omit<AnalyticsEvent, "id" | "at">) {
+  const prod = event.productId && (!event.productName || !event.slug) ? d.products.find((p) => p.id === event.productId) : undefined;
+  const list = (d.analytics ??= []);
+  list.unshift({
+    ...event,
+    id: newId(6),
+    productName: event.productName || prod?.name,
+    slug: event.slug || prod?.slug,
+    userName: event.userName || "Guest",
+    at: Date.now(),
+  });
+  if (list.length > 3000) list.length = 3000;
 }

@@ -187,7 +187,32 @@ export interface DB {
   analytics?: AnalyticsEvent[];
 }
 
-export type AnalyticsKind = "product_view" | "add_to_cart" | "wishlist_add" | "search" | "checkout_start";
+export type AnalyticsKind =
+  | "login"
+  | "login_failed"
+  | "register"
+  | "logout"
+  | "otp_login"
+  | "page_view"
+  | "product_view"
+  | "search"
+  | "add_to_cart"
+  | "remove_from_cart"
+  | "wishlist_add"
+  | "wishlist_remove"
+  | "checkout_start"
+  | "coupon_apply"
+  | "order_place"
+  | "order_cancel"
+  | "return_request"
+  | "review_add"
+  | "profile_update"
+  | "address_save"
+  | "password_change"
+  | "waitlist_join"
+  | "membership_buy"
+  | "social_claim"
+  | "support_ticket";
 export interface AnalyticsEvent {
   id: string;
   kind: AnalyticsKind;

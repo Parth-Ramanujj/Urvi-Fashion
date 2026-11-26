@@ -8,7 +8,7 @@ import { db, mutate } from "./db";
 import { CURRENCIES, LANGS } from "./i18n";
 import { couponDiscount, computeTotals, DELIVERY, memberDiscount, RETURN_WINDOW_DAYS, unitPrice, type DeliverySpeed } from "./pricing";
 import { deliveryFor } from "./delivery";
-import { fail, run, saveUpload, setOrderStatus, str } from "./server-utils";
+import { fail, recordActivity, run, saveUpload, setOrderStatus, str } from "./server-utils";
 import type { Address, CartLine, Coupon, DB, Measurements, PaymentMethod, Size, User } from "./types";
 import { SIZES } from "./types";
 
@@ -70,6 +70,7 @@ export async function register(input: { name: string; email: string; phone: stri
       const u: User = { id, name, email, phone, passwordHash: hashPassword(password), role: "customer", blocked: false, addresses: [], measurements: {}, createdAt: Date.now(), lastActiveAt: Date.now() };
       d.users.push(u);
       onboard(d, u, input.ref);
+      recordActivity(d, { kind: "register", userId: id, userName: name, meta: phone });
     });
     await startSession(id);
     return { role: "customer" as const };
@@ -83,16 +84,24 @@ export async function login(input: { email: string; password: string }) {
     const u = db().users.find((x) => x.email === email);
     if (!u || !verifyPassword(String(input.password ?? ""), u.passwordHash)) {
       recordFailedLogin(email);
+      await mutate((d) => recordActivity(d, { kind: "login_failed", userId: u?.id, userName: u?.name ?? email, meta: email }));
       fail("Incorrect email or password");
     }
     if (u!.blocked) fail("This account has been suspended. Contact support.");
     loginAttempts.delete(email);
+    await mutate((d) => {
+      const user = d.users.find((x) => x.id === u!.id);
+      if (user) user.lastActiveAt = Date.now();
+      recordActivity(d, { kind: "login", userId: u!.id, userName: u!.name, meta: u!.role });
+    });
     await startSession(u!.id);
     return { role: u!.role };
   });
 }
 
 export async function logout() {
+  const me = await currentUser();
+  if (me) await mutate((d) => recordActivity(d, { kind: "logout", userId: me.id, userName: me.name }));
   await endSession();
   revalidatePath("/", "layout");
 }
@@ -137,6 +146,10 @@ export async function verifyOtp(input: { phone: string; code: string; name?: str
         u = { id: newId(), name: str(input.name, 80) || `Shopper ${phone.slice(-4)}`, phone, role: "customer", blocked: false, addresses: [], measurements: {}, createdAt: Date.now(), lastActiveAt: Date.now() };
         d.users.push(u);
         onboard(d, u, input.ref);
+        recordActivity(d, { kind: "register", userId: u.id, userName: u.name, meta: `${phone} (OTP)` });
+      } else {
+        u.lastActiveAt = Date.now();
+        recordActivity(d, { kind: "otp_login", userId: u.id, userName: u.name, meta: phone });
       }
       return u.id;
     });
@@ -176,6 +189,7 @@ export async function updateProfile(input: { name: string; phone?: string; measu
       if (dob && !u.dob) { u.dob = dob; grantBirthday(d, u); }
       u.anniversary = anniversary || undefined;
       u.specialEvent = specialEvent;
+      recordActivity(d, { kind: "profile_update", userId: me.id, userName: name });
     });
     revalidatePath("/account", "layout");
   });
@@ -196,6 +210,7 @@ export async function saveAddress(a: Partial<Address>) {
       if (addr.isDefault || u.addresses.length === 0) { u.addresses.forEach((x) => (x.isDefault = false)); addr.isDefault = true; }
       const i = u.addresses.findIndex((x) => x.id === addr.id);
       if (i >= 0) u.addresses[i] = addr; else u.addresses.push(addr);
+      recordActivity(d, { kind: "address_save", userId: me.id, userName: me.name, meta: `${addr.label} · ${addr.city}` });
     });
     revalidatePath("/account", "layout");
     revalidatePath("/checkout");
@@ -303,6 +318,7 @@ export async function addReview(form: FormData) {
       prod.rating = Math.round(((prod.rating * prod.ratingCount + rating) / (prod.ratingCount + 1)) * 10) / 10;
       prod.ratingCount++;
       d.reviews.push({ id: newId(), productId, userId: me.id, name: me.name, rating, title: title || `${rating} stars`, body, photos, verified: !!bought, size: bought?.size, createdAt: Date.now() });
+      recordActivity(d, { kind: "review_add", userId: me.id, userName: me.name, productId: prod.id, productName: prod.name, slug: prod.slug, meta: `${rating}★` });
     });
     revalidatePath(`/product/${p!.slug}`);
   });
@@ -343,13 +359,15 @@ export async function placeOrder(input: {
       user.cart = undefined; // bag converted: no abandoned-cart reminder
       const now = Date.now();
       // shortcut: payment is simulated (always succeeds); integrate Razorpay/Stripe and confirm via webhook before marking paid.
+      const ref = orderRef(d.brand?.orderPrefix);
       d.orders.push({
-        id, ref: orderRef(d.brand?.orderPrefix), userId: me.id, address: address!, deliverySpeed: speed, couponCode: r.code || undefined, totals: r.totals, status: "placed", coinsUsed: coinsUsed || undefined,
+        id, ref, userId: me.id, address: address!, deliverySpeed: speed, couponCode: r.code || undefined, totals: r.totals, status: "placed", coinsUsed: coinsUsed || undefined,
         items: r.valid.map((l) => ({ productId: l.productId, slug: l.p!.slug, name: l.p!.name, brand: l.p!.brand, image: l.p!.colors.find((c) => c.name === l.color)?.images[0] ?? l.p!.colors[0].images[0], color: l.color, size: l.size, sku: l.v!.sku, qty: l.qty, price: l.price, mrp: l.mrp })),
         payment: { method: input.method, status: input.method === "cod" ? "pending" : "paid", txnId: input.method === "cod" ? undefined : `pay_${newId(10)}` },
         timeline: [{ status: "placed", at: now }], createdAt: now, eta: now + Math.max(1, r.dq.options[speed].days[1]) * 86_400_000,
       });
       d.notifications.push({ id: newId(), userId: me.id, title: "Order confirmed 🎉", body: "We've received your order and will pack it shortly.", href: `/account/orders/${id}`, createdAt: now, readBy: [] });
+      recordActivity(d, { kind: "order_place", userId: me.id, userName: me.name, meta: `${ref} · ₹${r.totals.total} · ${input.method.toUpperCase()} (${r.valid.length} items)` });
     });
     revalidatePath("/", "layout");
     return { id };
@@ -364,6 +382,7 @@ export async function cancelOrder(id: string, reason: string) {
       if (!o) fail("Order not found");
       if (!["placed", "packed"].includes(o!.status)) fail("This order can no longer be cancelled");
       setOrderStatus(d, o!, "cancelled", str(reason, 200) || "Cancelled by customer");
+      recordActivity(d, { kind: "order_cancel", userId: me.id, userName: me.name, meta: `${o!.ref} · ${str(reason, 60) || "Cancelled"}` });
     });
     revalidatePath(`/account/orders/${id}`);
   });
@@ -381,6 +400,7 @@ export async function requestReturn(id: string, type: "return" | "exchange", rea
       if (Date.now() - deliveredAt > RETURN_WINDOW_DAYS * 86_400_000) fail(`The ${RETURN_WINDOW_DAYS}-day return window has closed`);
       o!.returnRequest = { type: type === "exchange" ? "exchange" : "return", reason: str(reason, 300), at: Date.now(), exchangeSize: type === "exchange" ? exchangeSize : undefined };
       setOrderStatus(d, o!, type === "exchange" ? "exchange_requested" : "return_requested", "We'll schedule a pickup within 48 hours.");
+      recordActivity(d, { kind: "return_request", userId: me.id, userName: me.name, meta: `${o!.ref} · ${type}` });
     });
     revalidatePath(`/account/orders/${id}`);
   });
@@ -392,7 +412,10 @@ export async function createTicket(input: { subject: string; message: string; or
     const me = await requireUser();
     const subject = str(input.subject, 120), message = str(input.message, 2000);
     if (subject.length < 3 || message.length < 5) fail("Please add a subject and a message");
-    await mutate((d) => d.tickets.push({ id: newId(), userId: me.id, subject, orderRef: str(input.orderRef, 30) || undefined, status: "open", messages: [{ from: "customer", body: message, at: Date.now() }], createdAt: Date.now() }));
+    await mutate((d) => {
+      d.tickets.push({ id: newId(), userId: me.id, subject, orderRef: str(input.orderRef, 30) || undefined, status: "open", messages: [{ from: "customer", body: message, at: Date.now() }], createdAt: Date.now() });
+      recordActivity(d, { kind: "support_ticket", userId: me.id, userName: me.name, meta: subject });
+    });
     revalidatePath("/account/support");
   });
 }
@@ -440,6 +463,7 @@ export async function joinWaitlist(productId: string, color: string, size: Size)
     await mutate((d) => {
       if (d.waitlist.some((w) => w.userId === me.id && w.productId === productId && w.color === color && w.size === size && !w.notifiedAt)) return;
       d.waitlist.push({ id: newId(), userId: me.id, productId, color, size, createdAt: Date.now() });
+      recordActivity(d, { kind: "waitlist_join", userId: me.id, userName: me.name, productId: p!.id, productName: p!.name, slug: p!.slug, meta: `${color}, ${size}` });
     });
   });
 }
@@ -482,6 +506,7 @@ export async function buyMembership(planId: string, method: PaymentMethod) {
       u.membership = { planId: plan!.id, since: u.membership && u.membership.expiresAt > now ? u.membership.since : now, expiresAt };
       d.memberships!.push({ id: newId(), userId: u.id, planId: plan!.id, planName: plan!.name, price: plan!.price, method, txnId: `pay_${newId(10)}`, at: now, expiresAt });
       d.notifications.push({ id: newId(), userId: u.id, title: `Welcome to ${plan!.name} 👑`, body: `Your perks are live until ${new Date(expiresAt).toLocaleDateString("en-IN")}.`, href: "/membership", createdAt: now, readBy: [] });
+      recordActivity(d, { kind: "membership_buy", userId: u.id, userName: u.name, meta: `${plan!.name} · ₹${plan!.price}` });
       return { expiresAt };
     });
   });
@@ -499,6 +524,7 @@ export async function claimSocial(platformId: string) {
       const u = d.users.find((x) => x.id === me.id)!;
       if (u.socialClaimed?.includes(link!.id)) return 0;
       u.socialClaimed = [...(u.socialClaimed ?? []), link!.id];
+      recordActivity(d, { kind: "social_claim", userId: me.id, userName: me.name, meta: link!.label });
       return creditCoins(d, u, s!.coins, `Followed us on ${link!.label}`);
     });
   });
@@ -516,6 +542,7 @@ export async function changePassword(input: { current?: string; next: string }) 
       const u = d.users.find((x) => x.id === me.id)!;
       u.passwordHash = hashPassword(next);
       u.tokenVersion = (u.tokenVersion ?? 0) + 1;
+      recordActivity(d, { kind: "password_change", userId: me.id, userName: me.name });
     });
     await startSession(me.id);
   });

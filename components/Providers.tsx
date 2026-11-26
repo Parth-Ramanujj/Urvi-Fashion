@@ -1,6 +1,6 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { CheckCircle2, AlertCircle } from "lucide-react";
 import { savedCart, setPref as setPrefAction, syncCart } from "@/lib/actions";
 import { formatMoney, translator, type Currency, type Lang } from "@/lib/i18n";
@@ -31,7 +31,10 @@ function load<T>(key: string, fallback: T): T {
 function save(key: string, v: unknown) {
   try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* private mode: keep in memory */ }
 }
-export function trackEvent(kind: "product_view" | "add_to_cart" | "wishlist_add" | "search" | "checkout_start", data: { productId?: string; productName?: string; slug?: string; meta?: string } = {}) {
+export function trackEvent(
+  kind: "page_view" | "product_view" | "add_to_cart" | "remove_from_cart" | "wishlist_add" | "wishlist_remove" | "search" | "checkout_start" | "coupon_apply",
+  data: { productId?: string; productName?: string; slug?: string; meta?: string } = {},
+) {
   try {
     fetch("/api/analytics", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, ...data }), keepalive: true }).catch(() => {});
   } catch {}
@@ -39,6 +42,8 @@ export function trackEvent(kind: "product_view" | "add_to_cart" | "wishlist_add"
 
 export default function Providers({ children, user, lang, currency, theme: initialTheme, brand }: { children: React.ReactNode; user: PublicUser | null; lang: Lang; currency: Currency; theme: string; brand: Brand }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const lastTrackedPath = useRef<string>("");
   const [theme, setTheme] = useState(initialTheme);
   // shortcut: cart & wishlist live in localStorage (per device); move to the user record for cross-device sync.
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -56,6 +61,14 @@ export default function Providers({ children, user, lang, currency, theme: initi
     addEventListener("beforeinstallprompt", onPrompt); addEventListener("appinstalled", onInstalled);
     return () => { removeEventListener("beforeinstallprompt", onPrompt); removeEventListener("appinstalled", onInstalled); };
   }, []);
+
+  useEffect(() => {
+    if (!pathname || pathname.startsWith("/admin") || pathname.startsWith("/api")) return;
+    const full = pathname + (typeof window !== "undefined" ? window.location.search : "");
+    if (lastTrackedPath.current === full) return;
+    lastTrackedPath.current = full;
+    trackEvent("page_view", { meta: full });
+  }, [pathname]);
 
   useEffect(() => { setCart(load("th_cart", [])); setWishlist(load("th_wish", [])); setReady(true); }, []);
   useEffect(() => { if (ready) save("th_cart", cart); }, [cart, ready]);
@@ -102,9 +115,18 @@ export default function Providers({ children, user, lang, currency, theme: initi
       });
     },
     setQty: (sku, qty) => setCart((c) => { const next = c.map((x) => (x.sku === sku ? { ...x, qty: Math.max(1, Math.min(10, qty)) } : x)); save("th_cart", next); return next; }),
-    removeFromCart: (sku) => setCart((c) => { const next = c.filter((x) => x.sku !== sku); save("th_cart", next); return next; }),
+    removeFromCart: (sku) => {
+      const rem = cart.find((x) => x.sku === sku);
+      if (rem) trackEvent("remove_from_cart", { productId: rem.productId, productName: rem.name, slug: rem.slug, meta: `${rem.color}, ${rem.size}` });
+      setCart((c) => { const next = c.filter((x) => x.sku !== sku); save("th_cart", next); return next; });
+    },
     clearCart: () => { save("th_cart", []); setCart([]); },
-    wishlist, toggleWish: (id) => setWishlist((w) => (w.includes(id) ? w.filter((x) => x !== id) : [id, ...w])),
+    wishlist,
+    toggleWish: (id) => {
+      const removing = wishlist.includes(id);
+      trackEvent(removing ? "wishlist_remove" : "wishlist_add", { productId: id });
+      setWishlist((w) => (w.includes(id) ? w.filter((x) => x !== id) : [id, ...w]));
+    },
     toast,
     canInstall: !!installEvt, install: () => { installEvt?.prompt(); setInstallEvt(null); },
   }), [brand, user, lang, currency, theme, setPref, cart, cartOpen, wishlist, toast, installEvt]);
