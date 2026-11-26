@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { cookies } from "next/headers";
@@ -43,9 +44,38 @@ export async function saveUpload(f: unknown) {
   const ext = IMAGE_TYPES[f.type];
   if (!ext) fail("Only JPG, PNG, WEBP or GIF images are allowed");
   if (f.size > 5 * 1024 * 1024) fail("Each image must be under 5 MB");
+  const buf = Buffer.from(await f.arrayBuffer());
+
+  // Production cloud storage: if CLOUDINARY_URL is set, upload permanently to Cloudinary.
+  const cld = process.env.CLOUDINARY_URL?.trim().replace(/^['"]|['"]$/g, "");
+  if (cld) {
+    let cloud: string, apiKey: string, apiSecret: string;
+    try {
+      const u = new URL(cld);
+      cloud = u.hostname; apiKey = decodeURIComponent(u.username); apiSecret = decodeURIComponent(u.password);
+      if (!cloud || !apiKey || !apiSecret) throw new Error("missing parts");
+    } catch {
+      fail("CLOUDINARY_URL is invalid. Format: cloudinary://API_KEY:API_SECRET@CLOUD_NAME");
+    }
+    const ts = Math.floor(Date.now() / 1000);
+    const folder = "urvi-fashion";
+    const sig = createHash("sha1").update(`folder=${folder}&timestamp=${ts}${apiSecret}`).digest("hex");
+    const body = new FormData();
+    body.append("file", new Blob([buf], { type: f.type }), `upload.${ext}`);
+    body.append("api_key", apiKey);
+    body.append("timestamp", String(ts));
+    body.append("folder", folder);
+    body.append("signature", sig);
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${cloud}/image/upload`, { method: "POST", body }).catch(() => null);
+    if (!res) fail("Could not reach Cloudinary to upload image");
+    const data = await res.json().catch(() => ({})) as { secure_url?: string; error?: { message?: string } };
+    if (!res.ok || !data.secure_url) fail(data.error?.message || "Cloudinary image upload failed");
+    return data.secure_url;
+  }
+
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
   const name = `${newId(12)}.${ext}`;
-  fs.writeFileSync(path.join(UPLOAD_DIR, name), Buffer.from(await f.arrayBuffer()));
+  fs.writeFileSync(path.join(UPLOAD_DIR, name), buf);
   return `/api/files/${name}`;
 }
 
