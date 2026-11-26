@@ -4,8 +4,13 @@ import { deliverQueuedMessages, processArthaWebhook, verifyWebhook } from "@/lib
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const MAX_BODY = 256 * 1024;
+
 export async function POST(req: Request) {
+  const declared = Number(req.headers.get("content-length") || 0);
+  if (declared > MAX_BODY) return NextResponse.json({ ok: false, error: "Payload too large" }, { status: 413 });
   const raw = await req.text();
+  if (raw.length > MAX_BODY) return NextResponse.json({ ok: false, error: "Payload too large" }, { status: 413 });
   if (!verifyWebhook(raw, req.headers, new URL(req.url))) {
     return NextResponse.json({ ok: false, error: "Invalid webhook signature" }, { status: 401 });
   }

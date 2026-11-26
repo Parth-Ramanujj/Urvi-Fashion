@@ -1,12 +1,16 @@
 import type { IntegrationMessage, IntegrationView } from "@/lib/types";
 import type { Segment } from "../retention/segments";
 
+export type LeadTemp = "hot" | "warm" | "cold";
+
 export interface CrmCustomer {
   id: string;
   name: string;
   email?: string;
   phone?: string;
   segment: Segment;
+  leadTemp: LeadTemp;
+  isManualLead?: boolean;
   orders: number;
   spend: number;
   lastOrderAt: number | null;
@@ -16,6 +20,18 @@ export interface CrmCustomer {
   lastContactedAt?: number;
   lastInboundAt?: number;
   noteCount: number;
+}
+
+export interface CrmProduct {
+  id: string;
+  name: string;
+  slug: string;
+  brand: string;
+  category: string;
+  price: number;
+  mrp: number;
+  image: string;
+  isNew?: boolean;
 }
 
 export interface CrmSession { id: string; name?: string; status?: string; phone?: string | null; engineType?: string | null }
@@ -31,6 +47,7 @@ export interface CrmMetaInsight { spend?: string; impressions?: string; clicks?:
 export interface CrmData {
   settings: IntegrationView;
   customers: CrmCustomer[];
+  products: CrmProduct[];
   messages: IntegrationMessage[];
   sessions: CrmSession[];
   webhooks: CrmWebhook[];

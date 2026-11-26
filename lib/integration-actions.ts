@@ -35,7 +35,7 @@ import { mutate } from "./db";
 import { deliverInBackground, runIntegrationCron } from "./integrations";
 import { appBaseUrl, integrationView, rawIntegrations } from "./integration-settings";
 import { createMetaCampaign, MetaError, testMetaPixel } from "./meta";
-import { fail, run, str } from "./server-utils";
+import { fail, run, saveUpload, str } from "./server-utils";
 import type { Automation, AutomationKey, IntegrationMessage, IntegrationSettings, WhatsAppAutoReplyRule } from "./types";
 
 export interface IntegrationSettingsInput {
@@ -50,6 +50,16 @@ const int = (v: unknown, min: number, max: number, label: string) => {
   const n = Number(v);
   if (!Number.isFinite(n) || n < min || n > max) fail(`${label} must be between ${min} and ${max}`);
   return Math.round(n);
+};
+const oneOf = <T extends string>(value: unknown, allowed: readonly T[], label: string): T => {
+  const v = str(value, 40) as T;
+  if (!allowed.includes(v)) fail(`Choose a valid ${label}`);
+  return v;
+};
+const httpUrl = (value: unknown): string => {
+  const u = str(value, 500);
+  if (u && !/^https?:\/\//i.test(u)) fail("Media URL must start with http:// or https://");
+  return u;
 };
 
 async function external<T>(fn: () => Promise<T>): Promise<T> {
@@ -85,7 +95,9 @@ export async function saveIntegrationSettings(input: IntegrationSettingsInput) {
     const current = rawIntegrations();
     const w = input.whatsapp;
     const baseUrl = (str(w.baseUrl, 200) || current.whatsapp.baseUrl).replace(/\/+$/, "");
-    if (!/^https?:\/\//i.test(baseUrl)) fail("Artha base URL must start with https://");
+    if (!/^https:\/\//i.test(baseUrl) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(baseUrl)) {
+      fail("Artha base URL must be HTTPS (localhost HTTP is allowed for development)");
+    }
     const country = str(w.defaultCountryCode, 4).replace(/\D/g, "") || "91";
     const apiKey = str(w.apiKey, 400) || current.whatsapp.apiKey;
     const webhookSecret = str(w.webhookSecret, 200) || current.whatsapp.webhookSecret;
@@ -211,7 +223,7 @@ export async function sendWhatsAppChat(to: string, text: string) {
     if (!arthaConfig().configured) fail("Add the Artha API key and session id first");
     const raw = str(to, 120);
     const chatId = raw.includes("@") ? raw : `${phoneDigits(raw, rawIntegrations().whatsapp.defaultCountryCode)}@c.us`;
-    if (!chatId || chatId === "@c.us") fail("Enter a valid phone number or chat id");
+    if (!/^[0-9]{6,20}@(c|g)\.us$/i.test(chatId)) fail("Enter a valid phone number or WhatsApp chat id");
     const body = str(text, 1200);
     if (!body) fail("Write a message to send");
     const res = await external(() => sendWhatsAppText(chatId, body));
@@ -264,6 +276,7 @@ export async function registerArthaWebhook() {
     if (!s.whatsapp.apiKey || !s.whatsapp.sessionId) fail("Add the Artha API key and session id first");
     const base = appBaseUrl();
     if (!base) fail("Set APP_URL to your public site URL before registering the webhook");
+    if (process.env.NODE_ENV === "production" && !/^https:\/\//i.test(base)) fail("APP_URL must be a public HTTPS URL in production");
     const secret = s.whatsapp.webhookSecret || randomBytes(16).toString("hex");
     if (!s.whatsapp.webhookSecret) {
       await mutate((d) => {
@@ -293,7 +306,7 @@ export async function sendWhatsAppTest(phone: string, text: string) {
     const s = rawIntegrations();
     if (!arthaConfig().configured) fail("Add the Artha API key and session id first");
     const digits = phoneDigits(phone, s.whatsapp.defaultCountryCode);
-    if (digits.length < 10) fail("Enter a valid phone number with country code");
+    if (digits.length < 10 || digits.length > 15) fail("Enter a valid phone number with country code");
     const body = str(text, 1000);
     if (!body) fail("Write a message to send");
     const res = await external(() => sendWhatsAppText(`${digits}@c.us`, body));
@@ -318,7 +331,7 @@ export async function sendWhatsAppToCustomer(userId: string, text: string) {
       if (!u) fail("Customer not found");
       if (u!.crm?.whatsappOptIn === false) fail("This customer opted out of WhatsApp messages");
       const digits = phoneDigits(u!.phone, s.whatsapp.defaultCountryCode);
-      if (!digits) fail("This customer has no phone number");
+      if (digits.length < 10 || digits.length > 15) fail("This customer does not have a valid phone number");
       u!.crm ??= { whatsappOptIn: true };
       u!.crm.lastContactedAt = Date.now();
       queueMessage(d, { channel: "whatsapp", to: digits, userId: u!.id, body, automation: "manual", status: "queued" });
@@ -349,7 +362,7 @@ export async function retryIntegrationMessage(id: string) {
   });
 }
 
-export async function updateCrmProfile(userId: string, input: { whatsappOptIn?: boolean; tags?: string[]; note?: string; source?: string }) {
+export async function updateCrmProfile(userId: string, input: { whatsappOptIn?: boolean; leadTemp?: "hot" | "warm" | "cold" | ""; tags?: string[]; note?: string; source?: string }) {
   return run(async () => {
     const me = await requireUser("admin");
     const id = str(userId, 40);
@@ -360,7 +373,10 @@ export async function updateCrmProfile(userId: string, input: { whatsappOptIn?: 
       if (!u) fail("Customer not found");
       u!.crm ??= { whatsappOptIn: true };
       if (input.whatsappOptIn !== undefined) u!.crm.whatsappOptIn = !!input.whatsappOptIn;
-      u!.crm.tags = tags;
+      if (input.leadTemp !== undefined) {
+        u!.crm.leadTemp = ["hot", "warm", "cold"].includes(input.leadTemp) ? (input.leadTemp as "hot" | "warm" | "cold") : undefined;
+      }
+      if (input.tags !== undefined) u!.crm.tags = tags;
       if (input.source !== undefined) u!.crm.source = str(input.source, 40) || undefined;
       if (note) {
         u!.crm.notes ??= [];
@@ -408,6 +424,123 @@ export async function sendSegmentWhatsApp(input: { segment: Segment; message: st
   });
 }
 
+export async function sendBulkNumbersWhatsApp(input: { numbers: string; message: string; confirm: boolean }) {
+  return run(async () => {
+    await requireUser("admin");
+    if (!input.confirm) fail("Tick the confirmation box before sending");
+    const message = str(input.message, 1500);
+    if (message.length < 3) fail("Write a message");
+    const s = rawIntegrations();
+    if (!arthaConfig().configured) fail("Add the Artha API key and session id first");
+    const rawList = String(input.numbers ?? "").split(/[\n,;|\t]+/).map((x) => x.trim()).filter(Boolean);
+    const unique = [...new Set(rawList.map((n) => phoneDigits(n, s.whatsapp.defaultCountryCode)).filter((d) => d.length >= 10))].slice(0, 500);
+    if (!unique.length) fail("No valid 10-digit phone numbers found");
+    const sent = await mutate((d) => {
+      const body = renderTemplate(message, { name: "Friend", first: "there", brand: d.brand?.name ?? "", link: storeUrl("/shop") });
+      for (const digits of unique) {
+        queueMessage(d, { channel: "whatsapp", to: digits, body, automation: "bulk:upload", status: "queued" });
+      }
+      d.campaigns.unshift({ id: newId(), title: "WhatsApp bulk list", body: message, href: "/shop", audience: `${unique.length} uploaded numbers`, sentAt: Date.now(), reach: unique.length });
+      return unique.length;
+    });
+    deliverInBackground();
+    revalidatePath("/admin/crm");
+    return { sent };
+  });
+}
+
+export async function sendProductCampaignWhatsApp(input: {
+  productIds: string[];
+  audience: "all" | "hot" | "warm" | "cold" | "numbers";
+  numbers?: string;
+  message: string;
+  confirm: boolean;
+}) {
+  return run(async () => {
+    await requireUser("admin");
+    if (!input.confirm) fail("Tick the confirmation box before sending");
+    const message = str(input.message, 1500);
+    if (message.length < 3) fail("Write a message");
+    const s = rawIntegrations();
+    if (!arthaConfig().configured) fail("Add the Artha API key and session id first");
+    const now = Date.now();
+    const sent = await mutate((d) => {
+      const firstProd = d.products.find((p) => input.productIds.includes(p.id));
+      const link = storeUrl(firstProd ? `/product/${firstProd.slug}` : "/shop");
+      if (input.audience === "numbers") {
+        const rawList = String(input.numbers ?? "").split(/[\n,;|\t]+/).map((x) => x.trim()).filter(Boolean);
+        const unique = [...new Set(rawList.map((n) => phoneDigits(n, s.whatsapp.defaultCountryCode)).filter((x) => x.length >= 10))].slice(0, 500);
+        if (!unique.length) fail("No valid 10-digit phone numbers found");
+        const body = renderTemplate(message, { name: "Friend", first: "there", brand: d.brand?.name ?? "", link });
+        for (const digits of unique) queueMessage(d, { channel: "whatsapp", to: digits, body, automation: "product_campaign", status: "queued" });
+        d.campaigns.unshift({ id: newId(), title: "New stock WhatsApp", body: message, href: firstProd ? `/product/${firstProd.slug}` : "/shop", audience: `${unique.length} uploaded numbers`, sentAt: now, reach: unique.length });
+        return unique.length;
+      }
+
+      const segs = segmentCustomers(d);
+      const targets = segs.filter((c) => {
+        if (input.audience === "all") return true;
+        const autoTemp = c.user.crm?.leadTemp
+          ?? ((c.lastOrderAt && now - c.lastOrderAt < 14 * 86_400_000) || (c.user.crm?.lastInboundAt && now - c.user.crm.lastInboundAt < 7 * 86_400_000) || c.segment === "vip"
+            ? "hot"
+            : now - c.user.lastActiveAt < 30 * 86_400_000
+              ? "warm"
+              : "cold");
+        return autoTemp === input.audience;
+      }).slice(0, 500);
+
+      let n = 0;
+      for (const c of targets) {
+        const u = c.user;
+        if (u.crm?.whatsappOptIn === false) continue;
+        const digits = phoneDigits(u.phone, s.whatsapp.defaultCountryCode);
+        if (!digits) continue;
+        const body = renderTemplate(message, { name: u.name, first: u.name.split(" ")[0], brand: d.brand?.name ?? "", link });
+        queueMessage(d, { channel: "whatsapp", to: digits, userId: u.id, body, automation: `product:${input.audience}`, status: "queued" });
+        n++;
+      }
+      if (!n) fail("No reachable customers found for this audience");
+      d.campaigns.unshift({ id: newId(), title: "New stock WhatsApp", body: message, href: firstProd ? `/product/${firstProd.slug}` : "/shop", audience: `${input.audience.toUpperCase()} leads (${n})`, sentAt: now, reach: n });
+      return n;
+    });
+    deliverInBackground();
+    revalidatePath("/admin/crm");
+    revalidatePath("/admin/marketing");
+    return { sent };
+  });
+}
+
+export async function quickConnectSocialAccount(input: { platform: "instagram" | "facebook"; handle: string }) {
+  return run(async () => {
+    await requireUser("admin");
+    const handle = str(input.handle, 80).replace(/^@+/, "");
+    if (handle.length < 2) fail("Enter your Instagram or Facebook username");
+    const label = `${input.platform}:${handle}`;
+    await mutate((d) => {
+      const s = rawIntegrations();
+      const accounts = s.social.accounts.includes(label) ? s.social.accounts : [...s.social.accounts, label];
+      d.integrations = {
+        ...s,
+        social: { ...s.social, enabled: true, accounts },
+        updatedAt: Date.now(),
+      };
+    });
+    revalidatePath("/admin/crm");
+    return { label };
+  });
+}
+
+export async function uploadPostMedia(form: FormData) {
+  return run(async () => {
+    await requireUser("admin");
+    const url = await saveUpload(form.get("file"));
+    if (!url) fail("Choose an image to upload");
+    const base = appBaseUrl();
+    const fullUrl = url.startsWith("http") ? url : (base ? `${base}${url}` : url);
+    return { url: fullUrl };
+  });
+}
+
 export async function runCronNow() {
   return run(async () => {
     await requireUser("admin");
@@ -421,11 +554,15 @@ export async function runCronNow() {
 export async function replySocialMessage(input: { accountId: string; threadId: string; platform: "instagram" | "facebook"; text: string }) {
   return run(async () => {
     await requireUser("admin");
+    const platform = oneOf(input.platform, ["instagram", "facebook"] as const, "platform");
+    const accountId = str(input.accountId, 120);
+    const threadId = str(input.threadId, 200);
+    if (!accountId || !threadId) fail("Choose a conversation first");
     const text = str(input.text, 2000);
     if (!text) fail("Write a reply");
-    await external(() => replySocial(str(input.accountId, 120), str(input.threadId, 200), text));
+    await external(() => replySocial(accountId, threadId, text));
     await mutate((d) => {
-      queueMessage(d, { channel: input.platform, direction: "out", to: str(input.threadId, 200), body: text, status: "sent", accountId: str(input.accountId, 120), threadId: str(input.threadId, 200) });
+      queueMessage(d, { channel: platform, direction: "out", to: threadId, body: text, status: "sent", accountId, threadId });
     });
     revalidatePath("/admin/crm");
     return { sent: true };
@@ -436,11 +573,12 @@ export async function broadcastSocialMessages(input: { platform: "instagram" | "
   return run(async () => {
     await requireUser("admin");
     if (!input.confirm) fail("Tick the confirmation box before broadcasting");
+    const platform = oneOf(input.platform, ["instagram", "facebook"] as const, "platform");
     const text = str(input.text, 2000);
     if (text.length < 3) fail("Write a message");
-    const result = await external(() => broadcastSocial(input.platform, text));
+    const result = await external(() => broadcastSocial(platform, text));
     await mutate((d) => {
-      queueMessage(d, { channel: input.platform, direction: "out", body: text, status: "sent", accountId: "broadcast" });
+      queueMessage(d, { channel: platform, direction: "out", body: text, status: "sent", accountId: "broadcast" });
     });
     revalidatePath("/admin/crm");
     return result;
@@ -455,12 +593,16 @@ export async function saveSocialRule(input: {
   return run(async () => {
     await requireUser("admin");
     const name = str(input.name, 60);
+    const platform = oneOf(input.platform ?? "all", ["all", "instagram", "facebook", "youtube"] as const, "platform");
+    const appliesTo = oneOf(input.appliesTo ?? "both", ["comments", "dms", "both"] as const, "applies-to");
+    const matchType = oneOf(input.matchType ?? "contains", ["contains", "exact", "regex", "all"] as const, "match type");
     const keywords = (Array.isArray(input.keywords) ? input.keywords : []).map((k) => str(k, 50)).filter(Boolean).slice(0, 25);
     const replies = (Array.isArray(input.replyTemplates) ? input.replyTemplates : []).map((r) => str(r, 800)).filter(Boolean).slice(0, 10);
+    const autoDmTemplate = str(input.autoDmTemplate, 800);
     if (!name) fail("Give the rule a name");
     if (!keywords.length) fail("Add at least one keyword");
     if (!replies.length) fail("Add at least one reply");
-    const result = await external(() => createSocialRule({ ...input, name, keywords, replyTemplates: replies }));
+    const result = await external(() => createSocialRule({ ...input, name, platform, appliesTo, matchType, keywords, replyTemplates: replies, autoDmTemplate: autoDmTemplate || undefined }));
     clearArthaCache();
     revalidatePath("/admin/crm");
     return result;
@@ -493,9 +635,18 @@ export async function publishSocialPost(input: {
 }) {
   return run(async () => {
     await requireUser("admin");
+    const platform = oneOf(input.platform, ["instagram", "facebook", "youtube", "x", "linkedin"] as const, "platform");
     const caption = str(input.caption, 2200);
     if (caption.length < 2) fail("Write a caption");
-    const result = await external(() => createSocialPost({ ...input, caption }));
+    const mediaUrl = httpUrl(input.mediaUrl);
+    const mediaType = input.mediaType ? oneOf(input.mediaType, ["IMAGE", "VIDEO"] as const, "media type") : undefined;
+    let scheduledAt: string | undefined;
+    if (input.scheduledAt) {
+      const at = Date.parse(input.scheduledAt);
+      if (!Number.isFinite(at)) fail("Enter a valid schedule time");
+      scheduledAt = new Date(at).toISOString();
+    }
+    const result = await external(() => createSocialPost({ ...input, platform, caption, mediaUrl: mediaUrl || undefined, mediaType, scheduledAt }));
     clearArthaCache();
     revalidatePath("/admin/crm");
     return result;
@@ -515,9 +666,10 @@ export async function createMetaCampaignAction(input: { name: string; objective?
     await requireUser("admin");
     const name = str(input.name, 120);
     if (name.length < 3) fail("Give the campaign a name");
+    const objective = oneOf(input.objective ?? "OUTCOME_SALES", ["OUTCOME_SALES", "OUTCOME_TRAFFIC", "OUTCOME_ENGAGEMENT", "OUTCOME_AWARENESS"] as const, "objective");
     const budget = Number(input.dailyBudget ?? 0);
     if (!Number.isFinite(budget) || budget < 0 || budget > 10_000_000) fail("Enter a valid daily budget");
-    return external(() => createMetaCampaign({ name, objective: str(input.objective, 60) || "OUTCOME_SALES", dailyBudget: budget }));
+    return external(() => createMetaCampaign({ name, objective, dailyBudget: budget }));
   });
 }
 

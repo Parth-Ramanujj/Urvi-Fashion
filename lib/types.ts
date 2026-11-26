@@ -263,6 +263,7 @@ export interface IntegrationMessage {
 export interface CrmProfile {
   /** Defaults to opted in; an explicit false blocks every automatic WhatsApp message. */
   whatsappOptIn?: boolean;
+  leadTemp?: "hot" | "warm" | "cold";
   tags?: string[];
   notes?: { id: string; body: string; at: number; by: string }[];
   source?: string;

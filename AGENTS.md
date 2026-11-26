@@ -35,7 +35,7 @@ White-label clothing store (default brand "Threadly"): Next.js 15 App Router, Re
 - `DEMO_DATA=false` creates an empty store with only `ADMIN_EMAIL` / `ADMIN_PASSWORD` (8+ chars, letters + numbers).
 - `DATA_DIR` defaults to `./data` (Vercel: `/tmp/store-data`). `CLOUDINARY_URL` is optional; without it uploads are written to `DATA_DIR/uploads` and served by `/api/files/[name]`.
 - `ARTHA_API_URL`, `ARTHA_API_KEY`, `ARTHA_SESSION_ID`, `META_*` and `APP_URL` drive the optional CRM integrations. Secrets are server-only; `integrationView()` is the sanitized shape for admin client components. `APP_URL` must be a public HTTPS URL for Artha webhooks.
-- `CRON_SECRET` (or `INTEGRATION_CRON_SECRET`) protects `/api/integrations/cron` via `Authorization: Bearer` or `?token=`. When unset the route is open — set it in production.
+- `CRON_SECRET` (or `INTEGRATION_CRON_SECRET`) protects `/api/integrations/cron` via `Authorization: Bearer` or `?token=`. When unset it is open only in development; production returns 401.
 
 ## CRM integrations (Artha / Meta)
 

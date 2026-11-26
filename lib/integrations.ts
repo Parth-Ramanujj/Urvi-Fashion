@@ -1,7 +1,7 @@
 import "server-only";
 import { createHmac } from "node:crypto";
 import { after } from "next/server";
-import { matchAutoReply, phoneDigits, queueAutomation, queueMessage, renderTemplate, storeUrl } from "./automation-core";
+import { ensureIntegrations, matchAutoReply, phoneDigits, queueAutomation, queueMessage, renderTemplate, storeUrl } from "./automation-core";
 import { ArthaError, arthaConfig, replySocial, sendWhatsAppText } from "./artha";
 import { safeEqual } from "./crypto";
 import { db, mutate } from "./db";
@@ -113,9 +113,12 @@ function parsePayload(body: unknown) {
 /** Verify the Artha webhook token (?token=) or an HMAC signature when a secret is configured. */
 export function verifyWebhook(rawBody: string, headers: Headers, url: URL): boolean {
   const secret = rawIntegrations().whatsapp.webhookSecret;
-  if (!secret) return true;
+  // Fail closed: without a configured secret anyone could forge inbound messages and auto-replies.
+  if (!secret) return false;
   const token = url.searchParams.get("token");
   if (token && safeEqual(token, secret)) return true;
+  const headerSecret = headers.get("x-artha-secret") || headers.get("x-webhook-secret");
+  if (headerSecret && safeEqual(headerSecret, secret)) return true;
   const sig = headers.get("x-artha-signature") || headers.get("x-webhook-signature") || headers.get("x-hub-signature-256") || headers.get("x-signature");
   if (!sig) return false;
   const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
@@ -133,28 +136,35 @@ export async function processArthaWebhook(body: unknown): Promise<WebhookResult>
     let replyQueued = false;
     let inbound = false;
     await mutate((d) => {
+      const s = ensureIntegrations(d);
+      s.lastWebhookAt = Date.now();
+      const duplicate = !!p.id && (d.integrationMessages ?? []).some((m) => m.direction === "in" && m.providerId === p.id && m.channel === channel);
+      if (p.fromMe || duplicate) return;
       if (p.text) {
         queueMessage(d, { channel, direction: "in", from: p.accountId || p.from, body: p.text, status: "received", accountId: p.accountId, threadId: p.threadId, providerId: p.id });
         inbound = true;
       }
-      const s = rawIntegrations();
-      s.lastWebhookAt = Date.now();
-      d.integrations = s;
     });
     const s = rawIntegrations();
-    if (s.social.enabled && s.social.autoReply && p.text && p.accountId && p.threadId && ["instagram", "facebook"].includes(p.platform)) {
-      try {
-        await replySocial(p.accountId, p.threadId, renderTemplate(s.social.defaultReply, { name: "", first: "", brand: db().brand?.name ?? "", link: storeUrl("/") }));
-        replyQueued = true;
-      } catch (e) {
-        console.error("[integrations] social auto-reply failed", e);
+    if (inbound && s.social.enabled && s.social.autoReply && p.text && p.accountId && p.threadId && ["instagram", "facebook"].includes(p.platform)) {
+      const reply = renderTemplate(s.social.defaultReply, { name: "", first: "", brand: db().brand?.name ?? "", link: storeUrl("/") });
+      if (reply) {
+        try {
+          await replySocial(p.accountId, p.threadId, reply);
+          await mutate((d) => {
+            queueMessage(d, { channel, direction: "out", to: p.threadId, body: reply, status: "sent", accountId: p.accountId, threadId: p.threadId, automation: "social_auto_reply" });
+          });
+          replyQueued = true;
+        } catch (e) {
+          console.error("[integrations] social auto-reply failed", e);
+        }
       }
     }
     return { event, inbound, replyQueued };
   }
 
   if (!/message\.(received|failed|ack|sent)/i.test(event)) {
-    await mutate((d) => { const s = rawIntegrations(); s.lastWebhookAt = Date.now(); d.integrations = s; });
+    await mutate((d) => { ensureIntegrations(d).lastWebhookAt = Date.now(); });
     return { event, inbound: false, replyQueued: false };
   }
 
@@ -170,7 +180,7 @@ export async function processArthaWebhook(body: unknown): Promise<WebhookResult>
           m.sentAt = m.sentAt ?? Date.now();
         }
       }
-      const s = rawIntegrations(); s.lastWebhookAt = Date.now(); d.integrations = s;
+      ensureIntegrations(d).lastWebhookAt = Date.now();
     });
     return { event, inbound: false, replyQueued: false };
   }
@@ -184,7 +194,11 @@ export async function processArthaWebhook(body: unknown): Promise<WebhookResult>
   let replyQueued = false;
 
   await mutate((d) => {
-    const user = d.users.find((u) => phoneDigits(u.phone, d.integrations?.whatsapp.defaultCountryCode ?? "91") === digits);
+    const s = ensureIntegrations(d);
+    s.lastWebhookAt = Date.now();
+    const duplicate = !!p.id && (d.integrationMessages ?? []).some((m) => m.direction === "in" && m.providerId === p.id);
+    if (duplicate) return;
+    const user = d.users.find((u) => phoneDigits(u.phone, s.whatsapp.defaultCountryCode) === digits);
     if (user) {
       user.crm ??= { whatsappOptIn: true };
       user.crm.lastInboundAt = Date.now();
@@ -201,9 +215,6 @@ export async function processArthaWebhook(body: unknown): Promise<WebhookResult>
       });
       inbound = true;
     }
-    const s = rawIntegrations();
-    s.lastWebhookAt = Date.now();
-    d.integrations = s;
     if (!s.whatsapp.enabled || !s.whatsapp.autoReply || !p.text) return;
     const rule = matchAutoReply(s.whatsapp.rules, p.text);
     if (!rule) return;

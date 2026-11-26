@@ -7,7 +7,8 @@ export const dynamic = "force-dynamic";
 
 function authorized(req: Request): boolean {
   const secret = (process.env.CRON_SECRET || process.env.INTEGRATION_CRON_SECRET || "").trim();
-  if (!secret) return true;
+  // Local dev may leave it open; production must always configure a secret.
+  if (!secret) return process.env.NODE_ENV !== "production";
   const header = req.headers.get("authorization") || "";
   const bearer = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
   const token = new URL(req.url).searchParams.get("token") || "";

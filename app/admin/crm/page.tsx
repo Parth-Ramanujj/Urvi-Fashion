@@ -14,10 +14,11 @@ import {
 import { db } from "@/lib/db";
 import { integrationView } from "@/lib/integration-settings";
 import { metaAdsConfigured, metaCampaigns, metaInsights } from "@/lib/meta";
+import { unitPrice } from "@/lib/pricing";
 import { segmentCustomers } from "../retention/segments";
 import { PageTitle } from "../_ui";
 import { CrmUI } from "./CrmUI";
-import type { CrmAccount, CrmConversation, CrmData, CrmPost, CrmRule, CrmThread } from "./types";
+import type { CrmAccount, CrmConversation, CrmData, CrmPost, CrmRule, CrmThread, LeadTemp } from "./types";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "CRM & WhatsApp" };
@@ -40,12 +41,26 @@ export default async function CrmPage() {
   const d = db();
   const settings = integrationView();
   const rows = segmentCustomers(d);
+  const now = Date.now();
+  const autoLead = (c: (typeof rows)[number]): LeadTemp => {
+    if (c.user.crm?.leadTemp) return c.user.crm.leadTemp;
+    const recentOrder = c.lastOrderAt && now - c.lastOrderAt < 14 * 86_400_000;
+    const recentInbound = c.user.crm?.lastInboundAt && now - c.user.crm.lastInboundAt < 7 * 86_400_000;
+    const recentCart = c.user.cart?.items.length && now - c.user.cart.updatedAt < 7 * 86_400_000;
+    if (recentOrder || recentInbound || recentCart || c.segment === "vip") return "hot";
+    const activeRecently = now - c.user.lastActiveAt < 30 * 86_400_000 || (c.lastOrderAt && now - c.lastOrderAt < 60 * 86_400_000);
+    if (activeRecently) return "warm";
+    return "cold";
+  };
+
   const customers = rows.map((c) => ({
     id: c.user.id,
     name: c.user.name,
     email: c.user.email,
     phone: c.user.phone,
     segment: c.segment,
+    leadTemp: autoLead(c),
+    isManualLead: !!c.user.crm?.leadTemp,
     orders: c.orders,
     spend: c.spend,
     lastOrderAt: c.lastOrderAt,
@@ -56,6 +71,22 @@ export default async function CrmPage() {
     lastInboundAt: c.user.crm?.lastInboundAt,
     noteCount: c.user.crm?.notes?.length ?? 0,
   })).sort((a, b) => b.spend - a.spend);
+
+  const products = d.products
+    .filter((p) => p.active)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 100)
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      brand: p.brand,
+      category: p.category,
+      price: unitPrice(p),
+      mrp: p.mrp,
+      image: p.colors[0]?.images[0] ?? "",
+      isNew: now - p.createdAt < 14 * 86_400_000,
+    }));
 
   const messages = (d.integrationMessages ?? []).slice(0, 100);
   const errors: string[] = [];
@@ -150,6 +181,7 @@ export default async function CrmPage() {
   const data: CrmData = {
     settings,
     customers,
+    products,
     messages,
     sessions,
     webhooks,

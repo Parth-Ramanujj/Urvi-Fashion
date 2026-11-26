@@ -10,7 +10,10 @@ export function rawIntegrations(): IntegrationSettings {
   const stored = db().integrations;
   const s = mergeIntegrationDefaults(stored);
   const sw = stored?.whatsapp, sm = stored?.meta;
-  s.whatsapp.baseUrl = (sw?.baseUrl || env("ARTHA_API_URL") || DEFAULT_INTEGRATIONS.whatsapp.baseUrl).replace(/\/+$/, "");
+  const storedBase = (sw?.baseUrl || "").replace(/\/+$/, "");
+  const envBase = env("ARTHA_API_URL").replace(/\/+$/, "");
+  // A stored default URL must not shadow a custom ARTHA_API_URL; an explicit admin URL still wins.
+  s.whatsapp.baseUrl = (storedBase && storedBase !== DEFAULT_INTEGRATIONS.whatsapp.baseUrl ? storedBase : envBase || DEFAULT_INTEGRATIONS.whatsapp.baseUrl).replace(/\/+$/, "");
   s.whatsapp.apiKey = sw?.apiKey || env("ARTHA_API_KEY");
   s.whatsapp.sessionId = sw?.sessionId || env("ARTHA_SESSION_ID");
   s.whatsapp.webhookSecret = sw?.webhookSecret || env("INTEGRATION_WEBHOOK_SECRET");

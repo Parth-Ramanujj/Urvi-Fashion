@@ -21,8 +21,11 @@ export function AutomationPanel({ automations, rules }: { automations: Automatio
 
       <section>
         <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-          <div><h2 className="text-lg font-semibold">Auto-reply rules</h2><p className="text-xs text-zinc-500">Inbound WhatsApp messages matching a keyword get an instant reply (once per customer per day when enabled).</p></div>
-          <NewRule />
+          <div><h2 className="text-lg font-semibold">WhatsApp auto-reply rules</h2><p className="text-xs text-zinc-500">Inbound WhatsApp messages matching a keyword get an instant reply (once per customer per day when enabled).</p></div>
+          <div className="flex flex-wrap gap-2">
+            <QuickWaPreset />
+            <NewRule />
+          </div>
         </div>
         {rules.length === 0 ? <p className="card p-6 text-center text-sm text-zinc-500">No rules yet. Add a keyword rule to answer price, delivery or size questions automatically.</p> : (
           <div className="card divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -73,6 +76,26 @@ function RuleRow({ rule }: { rule: WhatsAppAutoReplyRule }) {
         <RuleForm rule={rule} onDone={() => setOpen(false)} />
       </Modal>
     </div>
+  );
+}
+
+function QuickWaPreset() {
+  const { pending, act } = useAct();
+  return (
+    <button
+      disabled={pending}
+      onClick={() => act(() => saveAutoReplyRule({
+        id: "price-catalogue",
+        name: "Price & Catalogue",
+        enabled: true,
+        keywords: ["price", "rate", "cost", "catalog", "catalogue", "link"],
+        reply: "Hi {{first}}! Check out our latest collection & prices here: {{link}} ✨",
+        oncePerDay: true,
+      }), "Price auto-reply added")}
+      className="btn-ghost px-3 py-1.5 text-xs"
+    >
+      + Price preset
+    </button>
   );
 }
 
