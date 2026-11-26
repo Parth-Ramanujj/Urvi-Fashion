@@ -27,7 +27,16 @@ function Login() {
   const [otpSent, setOtpSent] = useState(false);
 
   const done = (role: string) => {
-    const dest = next || (role === "admin" ? "/admin" : role === "delivery" ? "/delivery" : "/");
+    const dest =
+      role === "admin"
+        ? (next.startsWith("/admin") ? next : "/admin")
+        : role === "delivery"
+          ? (next.startsWith("/delivery") ? next : "/delivery")
+          : (next || "/");
+    if (role === "admin" || role === "delivery") {
+      window.location.href = dest;
+      return;
+    }
     router.push(dest); router.refresh();
   };
 
