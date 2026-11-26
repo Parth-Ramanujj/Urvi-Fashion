@@ -175,7 +175,7 @@ export async function setUserRole(id: string, role: Role) {
     const me = await requireUser("admin");
     if (id === me.id) fail("You can't change your own role");
     if (!["customer", "admin", "delivery"].includes(role)) fail("Invalid role");
-    await mutate((d) => { const u = d.users.find((x) => x.id === id); if (!u) fail("User not found"); u.role = role; });
+    await mutate((d) => { const u = d.users.find((x) => x.id === id); if (!u) fail("User not found"); u.role = role; u.tokenVersion = (u.tokenVersion ?? 0) + 1; });
     revalidatePath("/admin/customers");
   });
 }

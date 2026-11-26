@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { AlertTriangle, ImagePlus, Trash2 } from "lucide-react";
 import { useApp } from "@/components/Providers";
 import { FONT_PRESETS, isHex, memberProgram, palette, type Brand, type FontPreset } from "@/lib/brand";
@@ -39,6 +39,8 @@ export default function BrandForm({ initial }: { initial: Brand }) {
 
   const logoUrl = useMemo(() => (logoFile ? URL.createObjectURL(logoFile) : removeLogo ? undefined : b.logo), [logoFile, removeLogo, b.logo]);
   const iconUrl = useMemo(() => (iconFile ? URL.createObjectURL(iconFile) : removeIcon ? undefined : b.icon), [iconFile, removeIcon, b.icon]);
+  useEffect(() => () => { if (logoFile && logoUrl) URL.revokeObjectURL(logoUrl); }, [logoFile, logoUrl]);
+  useEffect(() => () => { if (iconFile && iconUrl) URL.revokeObjectURL(iconUrl); }, [iconFile, iconUrl]);
   const pal = palette(isHex(b.primary) ? b.primary : initial.primary);
   const previewVars = Object.fromEntries(Object.entries(pal).map(([k, v]) => [`--brand-${k}`, v])) as React.CSSProperties;
   const font = FONT_PRESETS[b.font] ?? FONT_PRESETS.classic;

@@ -15,6 +15,21 @@ import { SIZES } from "./types";
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE = /^[6-9]\d{9}$/; // Indian mobile numbers
 
+// In-memory sliding-window rate limiter for auth endpoints (10 failed logins / 15 min per email).
+const loginAttempts = new Map<string, number[]>();
+function checkLoginRate(email: string) {
+  const now = Date.now();
+  const recent = (loginAttempts.get(email) ?? []).filter((t) => now - t < 15 * 60_000);
+  if (recent.length >= 10) fail("Too many failed login attempts. Please wait 15 minutes and try again.");
+  return recent;
+}
+function recordFailedLogin(email: string) {
+  const now = Date.now();
+  const recent = (loginAttempts.get(email) ?? []).filter((t) => now - t < 15 * 60_000);
+  recent.push(now);
+  loginAttempts.set(email, recent);
+}
+
 /* ---------------- Preferences ---------------- */
 export async function setPref(key: "lang" | "currency" | "theme", value: string) {
   const ok = key === "lang" ? value in LANGS : key === "currency" ? value in CURRENCIES : ["light", "dark", "system"].includes(value);
@@ -57,9 +72,14 @@ export async function register(input: { name: string; email: string; password: s
 export async function login(input: { email: string; password: string }) {
   return run(async () => {
     const email = str(input.email, 120).toLowerCase();
+    checkLoginRate(email);
     const u = db().users.find((x) => x.email === email);
-    if (!u || !verifyPassword(String(input.password ?? ""), u.passwordHash)) fail("Incorrect email or password");
+    if (!u || !verifyPassword(String(input.password ?? ""), u.passwordHash)) {
+      recordFailedLogin(email);
+      fail("Incorrect email or password");
+    }
     if (u!.blocked) fail("This account has been suspended. Contact support.");
+    loginAttempts.delete(email);
     await startSession(u!.id);
     return { role: u!.role };
   });
@@ -472,6 +492,11 @@ export async function changePassword(input: { current?: string; next: string }) 
     // Accounts created by OTP/Google have no password yet and may set one without the current password.
     if (me.passwordHash && !verifyPassword(String(input.current ?? ""), me.passwordHash)) fail("Current password is incorrect");
     if (next.length < 8 || !/\d/.test(next) || !/[a-zA-Z]/.test(next)) fail("New password needs 8+ characters with letters and numbers");
-    await mutate((d) => { d.users.find((x) => x.id === me.id)!.passwordHash = hashPassword(next); });
+    await mutate((d) => {
+      const u = d.users.find((x) => x.id === me.id)!;
+      u.passwordHash = hashPassword(next);
+      u.tokenVersion = (u.tokenVersion ?? 0) + 1;
+    });
+    await startSession(me.id);
   });
 }

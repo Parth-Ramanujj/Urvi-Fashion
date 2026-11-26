@@ -5,7 +5,7 @@ import ProductView from "@/components/pdp/ProductView";
 import Reviews from "@/components/pdp/Reviews";
 import { currentUser } from "@/lib/auth";
 import { cardData } from "@/lib/catalog";
-import { db, mutate } from "@/lib/db";
+import { db } from "@/lib/db";
 import { pctOff, unitPrice } from "@/lib/pricing";
 import { getT } from "@/lib/server-utils";
 
@@ -21,7 +21,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
   const [{ slug }, { color }, user, t] = await Promise.all([params, searchParams, currentUser(), getT()]);
   const p = db().products.find((x) => x.slug === slug && x.active);
   if (!p) notFound();
-  await mutate((d) => { d.products.find((x) => x.id === p.id)!.views++; });
+  p.views++; // in-memory view counter (persisted on next write, avoids a DB write lock on every GET)
 
   const all = db().products.filter((x) => x.active && x.id !== p.id);
   const price = unitPrice(p);

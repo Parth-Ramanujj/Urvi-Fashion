@@ -41,7 +41,7 @@ export default function ProductView({ p, initialColor, measurements }: { p: P; i
     if (!size) { setShake(true); setTimeout(() => setShake(false), 500); toast(t("pdp.selectSize"), "err"); return; }
     if (!variant || variant.stock < qty) return toast("Not enough stock for that size", "err");
     addToCart({ productId: p.id, slug: p.slug, name: p.name, brand: p.brand, image: c.images[0], color: c.name, size: variant.size, sku: variant.sku, qty, price, mrp: Math.max(p.mrp, price) });
-    if (buyNow) location.href = "/checkout"; else { toast(`Added to bag · ${c.name}, ${size}`); setCartOpen(true); }
+    if (buyNow) router.push("/checkout"); else { toast(`Added to bag · ${c.name}, ${size}`); setCartOpen(true); }
   };
 
   const notify = async () => {
@@ -111,7 +111,7 @@ export default function ProductView({ p, initialColor, measurements }: { p: P; i
             })}
           </div>
           {rec && <p className="mt-3 text-sm text-emerald-700 dark:text-emerald-400"><BadgeCheck className="mr-1 inline size-4" />Size <b>{rec}</b> recommended from your measurement profile.</p>}
-          {!rec && chartFor(p.kind) && <p className="mt-3 text-xs text-zinc-500"><Link href="/account" className="underline">Add your measurements</Link> to get personalised size picks.</p>}
+          {!rec && chartFor(p.kind, p.category === "kids") && <p className="mt-3 text-xs text-zinc-500"><Link href="/account" className="underline">Add your measurements</Link> to get personalised size picks.</p>}
         </div>
 
         <div className="mt-5 text-sm font-medium" aria-live="polite">

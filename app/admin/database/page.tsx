@@ -1,6 +1,8 @@
 import { AlertTriangle, CheckCircle2, Database, Download, GitBranch, Link2, ShieldCheck } from "lucide-react";
+import { hasStrongSessionSecret } from "@/lib/auth";
 import { RELATIONS } from "@/lib/db-schema";
 import { dbStatus } from "@/lib/db";
+import { getBrand } from "@/lib/server-utils";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Database" };
@@ -35,6 +37,8 @@ export default async function DatabasePage() {
   const orphanTotal = s.orphans.reduce((n, o) => n + o.count, 0);
   const drift = s.tables.filter((t) => t.memory !== undefined && t.memory !== t.rows);
   const fkFor = (table: string, column: string) => s.foreignKeys.find((f) => f.child === table && f.col === column);
+  const weakSecret = !hasStrongSessionSecret();
+  const demoHints = getBrand().showDemoLogins;
 
   return (
     <div className="space-y-5">
@@ -42,6 +46,13 @@ export default async function DatabasePage() {
         <div><h1 className="font-display text-3xl font-bold">Database</h1><p className="text-sm text-zinc-500">MySQL {s.server} · <b>{s.database}</b> on {s.host} as {s.user} · data version {s.dataVersion}</p></div>
         {backup}
       </div>
+
+      {(weakSecret || demoHints) && (
+        <div className="space-y-2">
+          {weakSecret && <p className="flex gap-2 rounded-2xl bg-amber-50 p-4 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300"><AlertTriangle className="size-5 shrink-0" /><span><b>SESSION_SECRET</b> is missing or using a placeholder. Set a 16+ character random secret in your environment variables before going live.</span></p>}
+          {demoHints && <p className="flex gap-2 rounded-2xl bg-amber-50 p-4 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300"><AlertTriangle className="size-5 shrink-0" /><span>Demo login hints are visible on the login page. Turn them off in <b>Admin → Branding → Demo mode</b> before launching.</span></p>}
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <div className={`card flex items-center gap-3 p-4 ${orphanTotal ? "border-red-300" : ""}`}>{orphanTotal ? <AlertTriangle className="size-6 text-red-600" /> : <CheckCircle2 className="size-6 text-emerald-600" />}<div><p className="font-semibold">{orphanTotal ? `${orphanTotal} orphan rows` : "Relationships intact"}</p><p className="text-xs text-zinc-500">{s.foreignKeys.length} foreign keys enforced by MySQL</p></div></div>

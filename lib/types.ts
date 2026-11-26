@@ -60,6 +60,7 @@ export interface User {
   phone?: string;
   passwordHash?: string;
   googleId?: string;
+  tokenVersion?: number;
   role: Role;
   blocked: boolean;
   addresses: Address[];

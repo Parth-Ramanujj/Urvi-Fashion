@@ -89,11 +89,13 @@ export default function Providers({ children, user, lang, currency, theme: initi
     cart, cartCount: cart.reduce((s, l) => s + l.qty, 0), cartOpen, setCartOpen,
     addToCart: (l) => setCart((c) => {
       const ex = c.find((x) => x.sku === l.sku);
-      return ex ? c.map((x) => (x.sku === l.sku ? { ...x, qty: Math.min(10, x.qty + l.qty) } : x)) : [...c, l];
+      const next = ex ? c.map((x) => (x.sku === l.sku ? { ...x, qty: Math.min(10, x.qty + l.qty) } : x)) : [...c, l];
+      save("th_cart", next);
+      return next;
     }),
-    setQty: (sku, qty) => setCart((c) => c.map((x) => (x.sku === sku ? { ...x, qty: Math.max(1, Math.min(10, qty)) } : x))),
-    removeFromCart: (sku) => setCart((c) => c.filter((x) => x.sku !== sku)),
-    clearCart: () => setCart([]),
+    setQty: (sku, qty) => setCart((c) => { const next = c.map((x) => (x.sku === sku ? { ...x, qty: Math.max(1, Math.min(10, qty)) } : x)); save("th_cart", next); return next; }),
+    removeFromCart: (sku) => setCart((c) => { const next = c.filter((x) => x.sku !== sku); save("th_cart", next); return next; }),
+    clearCart: () => { save("th_cart", []); setCart([]); },
     wishlist, toggleWish: (id) => setWishlist((w) => (w.includes(id) ? w.filter((x) => x !== id) : [id, ...w])),
     toast,
     canInstall: !!installEvt, install: () => { installEvt?.prompt(); setInstallEvt(null); },

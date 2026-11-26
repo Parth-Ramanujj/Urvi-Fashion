@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { ArrowDown, ArrowUp, ChevronRight, ImagePlus, Plus, Trash2 } from "lucide-react";
 import ProductArt from "@/components/ProductArt";
 import { useApp } from "@/components/Providers";
@@ -35,6 +35,7 @@ export default function BannerEditor({ initial }: { initial: Banner[] }) {
   const [files, setFiles] = useState<Record<string, File>>({});
   const [pending, start] = useTransition();
   const urls = useMemo(() => Object.fromEntries(Object.entries(files).map(([id, f]) => [id, URL.createObjectURL(f)])), [files]);
+  useEffect(() => () => Object.values(urls).forEach(URL.revokeObjectURL), [urls]);
 
   const patch = (i: number, p: Partial<Banner>) => setList((l) => l.map((b, j) => (j === i ? { ...b, ...p } : b)));
   const move = (i: number, d: number) => setList((l) => { const n = [...l]; [n[i], n[i + d]] = [n[i + d], n[i]]; return n; });

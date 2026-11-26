@@ -5,6 +5,7 @@ import { recommendSize } from "../lib/sizes.ts";
 import { DEFAULT_DELIVERY, DEFAULT_RETENTION as R, maxRedeemable, tierOf } from "../lib/retention-core.ts";
 import { deliveryFor } from "../lib/delivery.ts";
 import { brandCss, palette } from "../lib/brand.ts";
+import { hashPassword, verifyPassword } from "../lib/crypto.ts";
 import { buildBlankSeed, buildSeed } from "../lib/seed.ts";
 import { diff, fromSnapshot, snapshotOf, toRows, writePlan } from "../lib/store-diff.ts";
 
@@ -94,5 +95,14 @@ assert.notEqual(a.secret, b.secret);
     { table: "users", upserts: [row], deletes: [] }, { table: "coin_ledger", upserts: [], deletes: ["c1"] }, { table: "orders", upserts: [row], deletes: [] },
   ]).map((s) => `${s.op}:${s.table}`);
   assert.deepEqual(plan, ["upsert:users", "upsert:products", "upsert:orders", "upsert:reviews", "delete:coin_ledger", "delete:reviews", "delete:products"]);
+}
+// Password hashing & malformed hash safety
+{
+  const h = hashPassword("Secret123");
+  assert.equal(verifyPassword("Secret123", h), true);
+  assert.equal(verifyPassword("Wrong123", h), false);
+  assert.equal(verifyPassword("Secret123", undefined), false);
+  assert.equal(verifyPassword("Secret123", "malformed-without-colon"), false);
+  assert.equal(verifyPassword("Secret123", "abc:def"), false);
 }
 console.log("selfcheck: all passed");

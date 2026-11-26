@@ -9,11 +9,16 @@ export function hashPassword(pw: string) {
 }
 
 export function verifyPassword(pw: string, stored?: string) {
-  if (!stored) return false;
+  if (!stored || !stored.includes(":")) return false;
   const [salt, hash] = stored.split(":");
-  const a = Buffer.from(hash, "hex");
-  const b = scryptSync(pw, Buffer.from(salt, "hex"), 64);
-  return a.length === b.length && timingSafeEqual(a, b);
+  if (!salt || !hash) return false;
+  try {
+    const a = Buffer.from(hash, "hex");
+    const b = scryptSync(pw, Buffer.from(salt, "hex"), 64);
+    return a.length === b.length && timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
 }
 
 export const hmac = (secret: string, data: string) => createHmac("sha256", secret).update(data).digest("base64url");

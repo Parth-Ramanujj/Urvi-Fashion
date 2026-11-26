@@ -66,7 +66,7 @@ export default async function Rewards() {
         <section className="card overflow-hidden">
           <div className="bg-gradient-to-r from-violet-600 to-fuchsia-600 p-5 text-white">
             <h2 className="text-lg font-bold">Refer & earn 🎁</h2>
-            <p className="text-sm text-white/85">Friend ne lavsho → tamne {refReward}! Your friend gets {r.referral.refereeCoins} coins on joining; you get {refReward} when their first order arrives.</p>
+            <p className="text-sm text-white/85">Refer a friend &amp; earn {refReward}! Your friend gets {r.referral.refereeCoins} coins on joining; you get {refReward} when their first order arrives.</p>
           </div>
           <div className="p-5">
             <ShareReferral code={u.referralCode} />

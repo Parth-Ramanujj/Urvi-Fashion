@@ -51,8 +51,14 @@ async function createSchema() {
   const url = new URL(process.env.DATABASE_URL!);
   const name = dbName();
   url.pathname = "/";
-  const admin = await mysql.createConnection({ uri: url.toString(), charset: "utf8mb4" });
-  try { await admin.query(`CREATE DATABASE IF NOT EXISTS \`${name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`); } finally { await admin.end(); }
+  try {
+    const admin = await mysql.createConnection({ uri: url.toString(), charset: "utf8mb4" });
+    try { await admin.query(`CREATE DATABASE IF NOT EXISTS \`${name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`); } finally { await admin.end(); }
+  } catch (e: unknown) {
+    const code = (e as { code?: string })?.code;
+    // Managed MySQL providers often restrict CREATE DATABASE; proceed if the target database already exists.
+    if (code !== "ER_DBACCESS_DENIED_ERROR" && code !== "ER_ACCESS_DENIED_ERROR") throw e;
+  }
   const pool = mysql.createPool({ uri: process.env.DATABASE_URL, charset: "utf8mb4", connectionLimit: Number(process.env.DB_POOL_SIZE) || 10, waitForConnections: true, enableKeepAlive: true });
   pool.pool.on("connection", (c) => c.query("SET SESSION sql_mode = 'STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION'"));
   await runMigrations(pool); // tables, relationship columns, foreign keys, views
@@ -122,7 +128,8 @@ async function refreshIfStale() {
 }
 
 async function mutateSql<T>(fn: (d: DB) => T): Promise<T> {
-  const conn = await g.__pool!.getConnection();
+  if (!g.__pool) throw new Error("Database not ready: MySQL failed to load at startup. Check DATABASE_URL and restart the server.");
+  const conn = await g.__pool.getConnection();
   try {
     await conn.beginTransaction();
     const [[meta]] = await conn.query<mysql.RowDataPacket[]>("SELECT version FROM store_meta WHERE id = 1 FOR UPDATE");

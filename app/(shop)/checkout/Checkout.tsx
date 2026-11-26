@@ -23,6 +23,13 @@ const METHODS: { k: PaymentMethod; label: string; sub: string; icon: typeof Cred
 ];
 
 const luhn = (n: string) => { let s = 0; [...n].reverse().forEach((d, i) => { let x = +d; if (i % 2) { x *= 2; if (x > 9) x -= 9; } s += x; }); return n.length >= 12 && s % 10 === 0; };
+const expValid = (v: string) => {
+  const m = v.match(/^(0[1-9]|1[0-2])\/(\d{2})$/);
+  if (!m) return false;
+  const now = new Date();
+  const yr = 2000 + Number(m[2]), mo = Number(m[1]);
+  return yr > now.getFullYear() || (yr === now.getFullYear() && mo >= now.getMonth() + 1);
+};
 const brandOf = (n: string) => (/^4/.test(n) ? "Visa" : /^(5[1-5]|2[2-7])/.test(n) ? "Mastercard" : /^3[47]/.test(n) ? "Amex" : /^(60|65|81|82|508)/.test(n) ? "RuPay" : "");
 
 export default function Checkout({ addresses: initial }: { addresses: Address[] }) {
@@ -51,7 +58,7 @@ export default function Checkout({ addresses: initial }: { addresses: Address[] 
   const cardNum = pay.card.replace(/\s/g, "");
   const payValid =
     method === "upi" ? /^[\w.-]{2,}@[a-z]{2,}$/i.test(pay.upi) :
-    method === "card" ? luhn(cardNum) && pay.name.trim().length > 1 && /^(0[1-9]|1[0-2])\/\d{2}$/.test(pay.exp) && /^\d{3,4}$/.test(pay.cvv) :
+    method === "card" ? luhn(cardNum) && pay.name.trim().length > 1 && expValid(pay.exp) && /^\d{3,4}$/.test(pay.cvv) :
     method === "netbanking" ? !!pay.bank : method === "wallet" ? !!pay.wallet : true;
   const blocked = !q || q.lines.some((l) => !l.available);
 

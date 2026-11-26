@@ -7,10 +7,28 @@ import type { Role, User } from "./types";
 
 const COOKIE = "th_session";
 const MAX_AGE = 60 * 60 * 24 * 30;
-const secret = () => process.env.SESSION_SECRET || db().secret;
+const PLACEHOLDER_SECRETS = new Set(["change-me-to-a-long-random-string", "secret", "changeme"]);
+
+export function hasStrongSessionSecret() {
+  const s = process.env.SESSION_SECRET?.trim() ?? "";
+  return s.length >= 16 && !PLACEHOLDER_SECRETS.has(s);
+}
+
+const secret = () => {
+  const env = process.env.SESSION_SECRET?.trim();
+  if (env && !PLACEHOLDER_SECRETS.has(env) && env.length >= 16) return env;
+  return db().secret;
+};
+
+/** Rejects protocol-relative (//evil.com) and backslash (/\\evil.com) open redirects. */
+export function safeNext(v: string | null | undefined, fallback = "/") {
+  if (!v || typeof v !== "string") return fallback;
+  return v.startsWith("/") && !v.startsWith("//") && !v.startsWith("/\\") ? v : fallback;
+}
 
 export async function startSession(userId: string) {
-  const payload = Buffer.from(JSON.stringify({ uid: userId, exp: Date.now() + MAX_AGE * 1000 })).toString("base64url");
+  const tv = db().users.find((x) => x.id === userId)?.tokenVersion ?? 0;
+  const payload = Buffer.from(JSON.stringify({ uid: userId, tv, exp: Date.now() + MAX_AGE * 1000 })).toString("base64url");
   (await cookies()).set(COOKIE, `${payload}.${hmac(secret(), payload)}`, {
     httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: MAX_AGE,
   });
@@ -27,10 +45,11 @@ export async function currentUser(): Promise<User | null> {
   const [payload, sig] = raw.split(".");
   if (!payload || !sig || !safeEqual(sig, hmac(secret(), payload))) return null;
   try {
-    const { uid, exp } = JSON.parse(Buffer.from(payload, "base64url").toString());
+    const { uid, tv = 0, exp } = JSON.parse(Buffer.from(payload, "base64url").toString());
     if (exp < Date.now()) return null;
     const u = db().users.find((x) => x.id === uid);
-    return u && !u.blocked ? u : null;
+    if (!u || u.blocked || (u.tokenVersion ?? 0) !== tv) return null;
+    return u;
   } catch {
     return null;
   }
