@@ -7,8 +7,9 @@ import { getBrand } from "@/lib/server-utils";
 
 export const dynamic = "force-dynamic";
 
-/** The brand's uploaded icon as a data URL (PNG/JPEG only — what the image renderer supports), else null. */
+/** The brand's uploaded icon as a data URL or Cloudinary URL, else null. */
 function uploadedIcon(src?: string) {
+  if (src?.startsWith("https://res.cloudinary.com/")) return src;
   const name = src?.match(/^\/api\/files\/([\w-]+\.(png|jpg))$/)?.[1];
   if (!name) return null;
   const file = path.join(UPLOAD_DIR, name);

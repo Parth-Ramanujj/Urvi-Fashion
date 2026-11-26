@@ -45,7 +45,7 @@ export async function saveProduct(form: FormData) {
       const cname = str(c.name, 30);
       if (!cname || !HEX.test(c.hex)) fail(`Colour ${i + 1} needs a name and a valid hex`);
       const uploaded = (await Promise.all(form.getAll(`img${i}`).slice(0, 8).map(saveUpload))).filter(Boolean) as string[];
-      const kept = (c.images ?? []).filter((s) => typeof s === "string" && s.startsWith("/api/files/"));
+      const kept = (c.images ?? []).filter((s) => typeof s === "string" && (s.startsWith("/api/files/") || s.startsWith("https://res.cloudinary.com/")));
       const images = [...kept, ...uploaded].slice(0, 10);
       colors.push({ name: cname, hex: c.hex.toLowerCase(), images: images.length ? images : artImages(d.kind as Product["kind"], c.hex.toLowerCase()) });
     }

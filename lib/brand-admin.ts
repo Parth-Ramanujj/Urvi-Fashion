@@ -96,8 +96,8 @@ export async function saveBanners(form: FormData) {
         id, eyebrow: text(b.eyebrow, `${n} eyebrow`, 40), title: text(b.title, `${n} title`, 60, 1), subtitle: text(b.subtitle, `${n} subtitle`, 140),
         cta: text(b.cta, `${n} button text`, 24, 1), href, from: str(b.from, 7), to: str(b.to, 7), art: { kind: b.art.kind, hex: str(b.art.hex, 7) },
         badge: text(b.badge, `${n} badge`, 20) || undefined, active: b.active !== false,
-        // Only keep an image URL that points at our own uploads (never an arbitrary client-supplied URL).
-        image: upload ?? (typeof b.image === "string" && b.image.startsWith("/api/files/") ? b.image : undefined),
+        // Only keep an image URL that points at our own uploads or Cloudinary.
+        image: upload ?? (typeof b.image === "string" && (b.image.startsWith("/api/files/") || b.image.startsWith("https://res.cloudinary.com/")) ? b.image : undefined),
       });
     }
     await mutate((d) => { d.banners = out; });
