@@ -14,6 +14,10 @@ import { SIZES } from "./types";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE = /^[6-9]\d{9}$/; // Indian mobile numbers
+const FAKE_PHONES = new Set(["9876543210", "0123456789", "1234567890"]);
+function validPhone(p: string) {
+  return PHONE.test(p) && !/^(\d)\1{9}$/.test(p) && !FAKE_PHONES.has(p);
+}
 
 // In-memory sliding-window rate limiter for auth endpoints (10 failed logins / 15 min per email).
 const loginAttempts = new Map<string, number[]>();
@@ -51,16 +55,19 @@ function onboard(d: DB, u: User, refCode?: string) {
   }
 }
 
-export async function register(input: { name: string; email: string; password: string; ref?: string }) {
+export async function register(input: { name: string; email: string; phone: string; password: string; ref?: string }) {
   return run(async () => {
     const name = str(input.name, 80), email = str(input.email, 120).toLowerCase(), password = String(input.password ?? "");
+    const phone = str(input.phone, 15).replace(/\D/g, "").slice(-10);
     if (name.length < 2) fail("Please enter your name");
+    if (!validPhone(phone)) fail("Enter a valid 10-digit mobile number");
     if (!EMAIL.test(email)) fail("Please enter a valid email");
     if (password.length < 8 || !/\d/.test(password) || !/[a-zA-Z]/.test(password)) fail("Password needs 8+ characters with letters and numbers");
     if (db().users.some((u) => u.email === email)) fail("An account with this email already exists");
+    if (db().users.some((u) => u.phone === phone)) fail("An account with this mobile number already exists");
     const id = newId();
     await mutate((d) => {
-      const u: User = { id, name, email, passwordHash: hashPassword(password), role: "customer", blocked: false, addresses: [], measurements: {}, createdAt: Date.now(), lastActiveAt: Date.now() };
+      const u: User = { id, name, email, phone, passwordHash: hashPassword(password), role: "customer", blocked: false, addresses: [], measurements: {}, createdAt: Date.now(), lastActiveAt: Date.now() };
       d.users.push(u);
       onboard(d, u, input.ref);
     });
@@ -93,7 +100,7 @@ export async function logout() {
 export async function sendOtp(phoneRaw: string) {
   return run(async () => {
     const phone = str(phoneRaw, 15).replace(/\D/g, "").slice(-10);
-    if (!PHONE.test(phone)) fail("Enter a valid 10-digit mobile number");
+    if (!validPhone(phone)) fail("Enter a valid 10-digit mobile number");
     const prev = db().otps.find((o) => o.phone === phone);
     if (prev && Date.now() - prev.sentAt < 30_000) fail("Please wait 30 seconds before requesting another code");
     const code = String(Math.floor(100000 + Math.random() * 900000));
@@ -139,13 +146,13 @@ export async function verifyOtp(input: { phone: string; code: string; name?: str
 }
 
 /* ---------------- Profile ---------------- */
-export async function updateProfile(input: { name: string; phone?: string; measurements?: Measurements; dob?: string }) {
+export async function updateProfile(input: { name: string; phone?: string; measurements?: Measurements; dob?: string; anniversary?: string; specialEvent?: { label: string; date: string } }) {
   return run(async () => {
     const me = await requireUser();
     const name = str(input.name, 80);
     if (name.length < 2) fail("Please enter your name");
     const phone = input.phone ? str(input.phone, 15).replace(/\D/g, "").slice(-10) : undefined;
-    if (phone && !PHONE.test(phone)) fail("Enter a valid 10-digit mobile number");
+    if (phone && !validPhone(phone)) fail("Enter a valid 10-digit mobile number");
     if (phone && db().users.some((u) => u.phone === phone && u.id !== me.id)) fail("This number is linked to another account");
     const m: Measurements = {};
     for (const k of ["height", "chest", "waist", "hips", "inseam"] as const) {
@@ -156,7 +163,20 @@ export async function updateProfile(input: { name: string; phone?: string; measu
     const dob = str(input.dob, 10);
     if (dob && (!/^\d{4}-\d{2}-\d{2}$/.test(dob) || Number.isNaN(Date.parse(dob)) || Date.parse(dob) > Date.now() - 5 * 365 * 86_400_000)) fail("Enter a valid date of birth");
     if (dob && me.dob && me.dob !== dob) fail("Date of birth can only be set once. Contact support to change it.");
-    await mutate((d) => { const u = d.users.find((x) => x.id === me.id)!; u.name = name; if (phone) u.phone = phone; if (input.measurements) u.measurements = m; if (dob && !u.dob) { u.dob = dob; grantBirthday(d, u); } });
+    const anniversary = str(input.anniversary, 10);
+    if (anniversary && (!/^\d{4}-\d{2}-\d{2}$/.test(anniversary) || Number.isNaN(Date.parse(anniversary)))) fail("Enter a valid anniversary date");
+    const evLabel = str(input.specialEvent?.label, 40), evDate = str(input.specialEvent?.date, 10);
+    if (evDate && (!/^\d{4}-\d{2}-\d{2}$/.test(evDate) || Number.isNaN(Date.parse(evDate)))) fail("Enter a valid event date");
+    const specialEvent = evLabel && evDate ? { label: evLabel, date: evDate } : undefined;
+    await mutate((d) => {
+      const u = d.users.find((x) => x.id === me.id)!;
+      u.name = name;
+      if (phone) u.phone = phone;
+      if (input.measurements) u.measurements = m;
+      if (dob && !u.dob) { u.dob = dob; grantBirthday(d, u); }
+      u.anniversary = anniversary || undefined;
+      u.specialEvent = specialEvent;
+    });
     revalidatePath("/account", "layout");
   });
 }

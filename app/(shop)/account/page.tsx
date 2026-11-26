@@ -6,5 +6,5 @@ export const metadata = { title: "My account" };
 
 export default async function AccountPage() {
   const u = await pageUser("/account");
-  return <><ProfileForm name={u.name} phone={u.phone ?? ""} email={u.email ?? ""} measurements={u.measurements} dob={u.dob ?? ""} /><PasswordForm hasPassword={!!u.passwordHash} /></>;
+  return <><ProfileForm name={u.name} phone={u.phone ?? ""} email={u.email ?? ""} measurements={u.measurements} dob={u.dob ?? ""} anniversary={u.anniversary ?? ""} specialEvent={u.specialEvent} /><PasswordForm hasPassword={!!u.passwordHash} /></>;
 }

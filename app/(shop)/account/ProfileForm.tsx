@@ -8,14 +8,20 @@ import type { Measurements } from "@/lib/types";
 
 const FIELDS: [keyof Measurements, string, string][] = [["height", "Height", "cm"], ["chest", "Chest / bust", "cm"], ["waist", "Waist", "cm"], ["hips", "Hips", "cm"], ["inseam", "Inseam", "cm"]];
 
-export default function ProfileForm({ name, phone, email, measurements: m, dob }: { name: string; phone: string; email: string; measurements: Measurements; dob: string }) {
+export default function ProfileForm({ name, phone, email, measurements: m, dob, anniversary, specialEvent }: { name: string; phone: string; email: string; measurements: Measurements; dob: string; anniversary: string; specialEvent?: { label: string; date: string } }) {
   const { toast } = useApp();
   const router = useRouter();
   const [pending, start] = useTransition();
   const submit = (fd: FormData) => start(async () => {
     const measurements = Object.fromEntries(FIELDS.map(([k]) => [k, Number(fd.get(k)) || undefined])) as Measurements;
     measurements.fit = (fd.get("fit") as Measurements["fit"]) || undefined;
-    const r = await updateProfile({ name: String(fd.get("name")), phone: String(fd.get("phone") ?? "") || undefined, measurements, dob: String(fd.get("dob") ?? "") || undefined });
+    const evLabel = String(fd.get("evLabel") ?? "").trim();
+    const evDate = String(fd.get("evDate") ?? "").trim();
+    const r = await updateProfile({
+      name: String(fd.get("name")), phone: String(fd.get("phone") ?? "") || undefined, measurements,
+      dob: String(fd.get("dob") ?? "") || undefined, anniversary: String(fd.get("anniversary") ?? "") || undefined,
+      specialEvent: evLabel && evDate ? { label: evLabel, date: evDate } : undefined,
+    });
     if (!r.ok) return toast(r.error, "err");
     toast("Profile saved"); router.refresh();
   });
@@ -29,6 +35,9 @@ export default function ProfileForm({ name, phone, email, measurements: m, dob }
           <label><span className="label">Email</span><input value={email || "—"} disabled className="input opacity-60" /></label>
           <label><span className="label">Birthday 🎂</span><input name="dob" type="date" defaultValue={dob} disabled={!!dob} max={new Date(Date.now() - 5 * 365 * 86_400_000).toISOString().slice(0, 10)} className="input disabled:opacity-60" />
             <span className="mt-1 block text-xs text-zinc-500">{dob ? "Saved — watch for a gift in your birthday month." : "Add it once to get a birthday gift every year."}</span></label>
+          <label><span className="label">Anniversary 💍</span><input name="anniversary" type="date" defaultValue={anniversary} className="input" /></label>
+          <label><span className="label">Other event name 🎉</span><input name="evLabel" defaultValue={specialEvent?.label ?? ""} maxLength={40} placeholder="e.g. Partner's birthday, Kid's birthday" className="input" /></label>
+          <label><span className="label">Other event date</span><input name="evDate" type="date" defaultValue={specialEvent?.date ?? ""} className="input" /></label>
         </div>
       </section>
       <section className="card p-5">

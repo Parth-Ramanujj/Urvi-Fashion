@@ -77,6 +77,10 @@ export interface User {
   /** YYYY-MM-DD; drives the yearly birthday reward. */
   dob?: string;
   birthdayRewardYear?: number;
+  /** YYYY-MM-DD; wedding / relationship anniversary. */
+  anniversary?: string;
+  /** Any other personal milestone (e.g. Partner's birthday, Kid's birthday). */
+  specialEvent?: { label: string; date: string };
   /** Social platforms whose follow reward was claimed. */
   socialClaimed?: string[];
   /** Delivery partners: the city they serve. */
