@@ -94,8 +94,11 @@ export const STATUS_LABEL: Record<OrderStatus, string> = {
 /** The single place order status changes: timeline, stock restore, refund flag and customer notification. Call inside mutate(). */
 export function setOrderStatus(d: DB, o: Order, status: OrderStatus, note?: string) {
   if (o.status === status) return;
+  const now = Date.now();
   o.status = status;
-  o.timeline.push({ status, at: Date.now(), note });
+  o.timeline.push({ status, at: now, note });
+  if (!o.trackingCode) o.trackingCode = `TRK-${newId(6).toUpperCase()}`;
+  (o.trackingLogs ??= []).push({ id: newId(4), title: STATUS_LABEL[status], note, at: now });
   if (status === "cancelled" || status === "returned") {
     for (const it of o.items) {
       const v = d.products.find((p) => p.id === it.productId)?.variants.find((x) => x.color === it.color && x.size === it.size);

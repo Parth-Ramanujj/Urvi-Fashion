@@ -101,6 +101,15 @@ export interface OrderItem { productId: string; slug: string; name: string; bran
 
 export interface Totals { mrp: number; discount: number; coupon: number; member?: number; coins?: number; delivery: number; tax: number; total: number }
 
+export interface TrackingCheckpoint {
+  id: string;
+  title: string;
+  location?: string;
+  note?: string;
+  by?: string;
+  at: number;
+}
+
 export interface Order {
   id: string;
   ref: string;
@@ -114,6 +123,10 @@ export interface Order {
   status: OrderStatus;
   timeline: { status: OrderStatus; at: number; note?: string }[];
   deliveryPartnerId?: string;
+  trackingCode?: string;
+  courierName?: string;
+  trackingUrl?: string;
+  trackingLogs?: TrackingCheckpoint[];
   returnRequest?: { type: "return" | "exchange"; reason: string; at: number; exchangeSize?: Size };
   createdAt: number;
   eta: number;

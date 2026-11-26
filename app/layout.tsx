@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans, Fraunces, Inter, Playfair_Display, Poppins } from "next/font/google";
+import MetaPixel from "@/components/MetaPixel";
 import Providers from "@/components/Providers";
 import { currentUser, publicUser } from "@/lib/auth";
 import { brandCss, iconVersion } from "@/lib/brand";
+import { metaPixelId } from "@/lib/integration-settings";
 import { getBrand, prefs } from "@/lib/server-utils";
 import "./globals.css";
 
@@ -44,6 +46,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="min-h-dvh font-sans">
+        <MetaPixel pixelId={metaPixelId()} />
         <Providers user={u ? publicUser(u) : null} lang={p.lang} currency={p.currency} theme={theme} brand={brand}>{children}</Providers>
       </body>
     </html>

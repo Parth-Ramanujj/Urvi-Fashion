@@ -22,7 +22,7 @@ White-label clothing store (default brand "Threadly"): Next.js 15 App Router, Re
 
 ## Server Actions, auth and mutations
 
-- Mutations are Server Actions in `lib/actions.ts` (storefront), `lib/admin-actions.ts`, `lib/admin-extra-actions.ts` and `lib/retention-admin.ts`. The only API routes are `/api/auth/google`, `/api/analytics`, `/api/files/[name]` and `/api/health`; do not add mutation API routes.
+- Mutations are Server Actions in `lib/actions.ts` (storefront), `lib/admin-actions.ts`, `lib/admin-extra-actions.ts`, `lib/retention-admin.ts` and `lib/integration-actions.ts` (Admin → CRM). The only API routes are `/api/auth/google`, `/api/analytics`, `/api/files/[name]`, `/api/health`, `/api/integrations/artha/webhook` (inbound Artha webhook) and `/api/integrations/cron` (scheduled integration runner); do not add mutation API routes.
 - Wrap action bodies in `run()` and throw `fail("message")` / `HttpError` for user-facing errors. `run()` maps PostgreSQL `23505` / `23503` and connection errors to friendly messages.
 - Guard actions with `await requireUser("admin")` (roles: `customer | admin | delivery`); guard pages/layouts with `await pageUser(nextPath, "admin")`, which redirects.
 - After a mutation call `revalidatePath`; admin code uses `touchAdmin()` = `revalidatePath("/", "layout")`.
@@ -34,6 +34,18 @@ White-label clothing store (default brand "Threadly"): Next.js 15 App Router, Re
 - `SESSION_SECRET` (>= 16 chars, not a placeholder) is required in production; otherwise a generated secret is stored in the DB and sessions break on reset.
 - `DEMO_DATA=false` creates an empty store with only `ADMIN_EMAIL` / `ADMIN_PASSWORD` (8+ chars, letters + numbers).
 - `DATA_DIR` defaults to `./data` (Vercel: `/tmp/store-data`). `CLOUDINARY_URL` is optional; without it uploads are written to `DATA_DIR/uploads` and served by `/api/files/[name]`.
+- `ARTHA_API_URL`, `ARTHA_API_KEY`, `ARTHA_SESSION_ID`, `META_*` and `APP_URL` drive the optional CRM integrations. Secrets are server-only; `integrationView()` is the sanitized shape for admin client components. `APP_URL` must be a public HTTPS URL for Artha webhooks.
+- `CRON_SECRET` (or `INTEGRATION_CRON_SECRET`) protects `/api/integrations/cron` via `Authorization: Bearer` or `?token=`. When unset the route is open — set it in production.
+
+## CRM integrations (Artha / Meta)
+
+- Artha powers WhatsApp and social inbox/automation (`lib/artha.ts`); Meta Pixel/CAPI/Ads live in `lib/meta.ts`. Both are optional and degrade gracefully when credentials are missing.
+- Admin → CRM (`app/admin/crm/`) is the only UI for these integrations. `lib/integration-settings.ts` merges env fallbacks with DB settings; never expose API keys or tokens to client components.
+- WhatsApp automations default **disabled** because demo/seed users have fake phone numbers. Enable them one at a time in Admin → CRM → Automations after testing.
+- Queueing and delivery: `queueMessage()` writes to `integrationMessages`; `deliverQueuedMessages()` sends via Artha. Background work uses `after()` from `next/server`. The `claimedAt` field recovers stale claims after 120s.
+- Inbound webhooks are verified with `?token=` and/or HMAC headers; registration auto-generates the secret. Artha's business is shared with another brand — never overwrite `/api/ai/config` or existing social rules from this app.
+- The storefront Meta Pixel is injected in `app/layout.tsx` only when `meta.enabled` is on; Purchase events go through CAPI from `placeOrder`.
+- `/api/integrations/cron` runs abandoned-cart scans and queued-message delivery; it is open when no cron secret is configured (local dev only).
 
 ## Conventions and traps
 

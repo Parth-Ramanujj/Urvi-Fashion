@@ -48,8 +48,8 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
             <li key={o.id} className="card p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm font-bold">{o.ref}</span><span className={`badge ${STATUS_TONE[o.status]}`}>{STATUS_LABEL[o.status]}</span>{o.deliverySpeed === "express" && <span className="badge bg-brand-100 text-brand-700">Express</span>}</div>
-                  <p className="mt-1 text-xs text-zinc-500">{new Date(o.createdAt).toLocaleString("en-IN")} · {u?.name ?? "Deleted user"} · {o.address.city}, {o.address.pincode}</p>
+                  <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm font-bold">{o.ref}</span>{o.trackingCode && <span className="badge bg-zinc-100 font-mono text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">{o.trackingCode}</span>}<span className={`badge ${STATUS_TONE[o.status]}`}>{STATUS_LABEL[o.status]}</span>{o.deliverySpeed === "express" && <span className="badge bg-brand-100 text-brand-700">Express</span>}</div>
+                  <p className="mt-1 text-xs text-zinc-500">{new Date(o.createdAt).toLocaleString("en-IN")} · {u?.name ?? "Deleted user"} · {o.address.city}, {o.address.pincode}{o.courierName ? ` · ${o.courierName}` : ""}</p>
                 </div>
                 <div className="text-right">
                   <Money v={o.totals.total} className="font-bold" />
@@ -65,8 +65,11 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
                 ))}
               </div>
               {o.returnRequest && <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm text-rose-900 dark:bg-rose-950/40 dark:text-rose-200"><b className="capitalize">{o.returnRequest.type}</b>{o.returnRequest.exchangeSize && ` → size ${o.returnRequest.exchangeSize}`}: “{o.returnRequest.reason}”</p>}
+              {o.trackingLogs && o.trackingLogs.length > 0 && (
+                <p className="mt-2 text-xs text-zinc-500">Latest tracking: <b>{o.trackingLogs[o.trackingLogs.length - 1].title}</b>{o.trackingLogs[o.trackingLogs.length - 1].location ? ` (${o.trackingLogs[o.trackingLogs.length - 1].location})` : ""}</p>
+              )}
               <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-                <OrderControls id={o.id} status={o.status} partnerId={o.deliveryPartnerId ?? ""} partners={partnersFor(o.address.city)} hasReturn={["return_requested", "exchange_requested"].includes(o.status)} />
+                <OrderControls id={o.id} status={o.status} partnerId={o.deliveryPartnerId ?? ""} partners={partnersFor(o.address.city)} hasReturn={["return_requested", "exchange_requested"].includes(o.status)} trackingCode={o.trackingCode} courierName={o.courierName} trackingUrl={o.trackingUrl} city={o.address.city} />
                 <Link href={`/invoice/${o.id}`} target="_blank" className="btn-ghost ml-auto px-3 py-1.5 text-xs"><FileText className="size-3.5" />Invoice</Link>
               </div>
             </li>

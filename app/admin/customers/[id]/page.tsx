@@ -10,6 +10,7 @@ import { AdjustCoins } from "../../retention/Retention";
 import { segmentCustomers, SEGMENTS } from "../../retention/segments";
 import { PageTitle, STATUS_TONE } from "../../_ui";
 import UserControls from "../UserControls";
+import CustomerCrm from "./CustomerCrm";
 import PersonalCoupon from "./PersonalCoupon";
 
 export const dynamic = "force-dynamic";
@@ -93,6 +94,8 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {kpis.map(([l, v]) => <div key={l} className="card p-4"><p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{l}</p><p className="mt-1.5 text-xl font-bold tabular-nums">{v}</p></div>)}
       </div>
+
+      <CustomerCrm userId={u.id} name={u.name} phone={u.phone} crm={u.crm} />
 
       <section className="card mt-6 overflow-x-auto">
         <h2 className="p-5 pb-3 font-semibold">Products bought <span className="text-sm font-normal text-zinc-500">({products.length})</span></h2>

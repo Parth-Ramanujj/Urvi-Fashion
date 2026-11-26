@@ -366,8 +366,11 @@ export async function placeOrder(input: {
       const now = Date.now();
       // shortcut: payment is simulated (always succeeds); integrate Razorpay/Stripe and confirm via webhook before marking paid.
       const ref = orderRef(d.brand?.orderPrefix);
+      const trackingCode = `TRK-${newId(6).toUpperCase()}`;
       d.orders.push({
         id, ref, userId: me.id, address: address!, deliverySpeed: speed, couponCode: r.code || undefined, totals: r.totals, status: "placed", coinsUsed: coinsUsed || undefined,
+        trackingCode, courierName: "Store Delivery",
+        trackingLogs: [{ id: newId(4), title: "Order confirmed", location: "Store", note: "Order received and queued for packing", by: "System", at: now }],
         items: r.valid.map((l) => ({ productId: l.productId, slug: l.p!.slug, name: l.p!.name, brand: l.p!.brand, image: l.p!.colors.find((c) => c.name === l.color)?.images[0] ?? l.p!.colors[0].images[0], color: l.color, size: l.size, sku: l.v!.sku, qty: l.qty, price: l.price, mrp: l.mrp })),
         payment: { method: input.method, status: input.method === "cod" ? "pending" : "paid", txnId: input.method === "cod" ? undefined : `pay_${newId(10)}` },
         timeline: [{ status: "placed", at: now }], createdAt: now, eta: now + Math.max(1, r.dq.options[speed].days[1]) * 86_400_000,

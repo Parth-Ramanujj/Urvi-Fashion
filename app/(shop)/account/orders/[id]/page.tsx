@@ -43,7 +43,16 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
 
       <section className="card p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-semibold">Live tracking</h3>
+          <div>
+            <h3 className="font-semibold">Live tracking</h3>
+            {(o.trackingCode || o.courierName) && (
+              <p className="text-xs text-zinc-500">
+                {o.trackingCode && <>Tracking ID: <b className="font-mono">{o.trackingCode}</b> · </>}
+                {o.courierName || "Store Delivery"}
+                {o.trackingUrl && <> · <a href={o.trackingUrl} target="_blank" rel="noreferrer" className="text-brand-600 underline">Track on courier site</a></>}
+              </p>
+            )}
+          </div>
           {o.status !== "cancelled" && reached < 4 && <p className="text-sm text-zinc-500">Arriving by <b className="text-zinc-900 dark:text-white">{new Date(o.eta).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" })}</b></p>}
         </div>
         {o.status === "cancelled" ? (
@@ -72,6 +81,22 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
           <p key={i} className="mt-4 flex items-center gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300"><RotateCcw className="size-4 shrink-0" /><span><b>{STATUS_LABEL[e.status]}</b> · {fmt(e.at)}{e.note && ` — ${e.note}`}</span></p>
         ))}
         {rider && ["shipped", "out_for_delivery"].includes(o.status) && <p className="mt-4 rounded-xl bg-zinc-50 p-3 text-sm dark:bg-zinc-800/50">Delivery partner: <b>{rider.name}</b>{rider.phone && <> · <a href={`tel:${rider.phone}`} className="underline">{rider.phone}</a></>}</p>}
+        {o.trackingLogs && o.trackingLogs.length > 0 && (
+          <div className="mt-5 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+            <h4 className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Tracking history</h4>
+            <ul className="space-y-2.5 text-sm">
+              {[...o.trackingLogs].reverse().map((l) => (
+                <li key={l.id} className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium">{l.title}{l.location ? <span className="font-normal text-zinc-500"> · {l.location}</span> : null}</p>
+                    {l.note && <p className="text-xs text-zinc-500">{l.note}</p>}
+                  </div>
+                  <span className="shrink-0 text-xs text-zinc-400">{fmt(l.at)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </section>
 
       <OrderActions id={o.id} status={o.status} returnable={returnable} sizes={[...new Set(o.items.map((i) => i.size))]} windowDays={RETURN_WINDOW_DAYS} />

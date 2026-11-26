@@ -191,21 +191,36 @@ export async function bulkImportProducts(csvText: string) {
 }
 
 /* ---------------- Orders ---------------- */
-export async function updateOrder(id: string, input: { status?: OrderStatus; deliveryPartnerId?: string }) {
+export async function updateOrder(id: string, input: { status?: OrderStatus; deliveryPartnerId?: string; trackingCode?: string; courierName?: string; trackingUrl?: string }) {
   return run(async () => {
-    await requireUser("admin");
+    const me = await requireUser("admin");
     await mutate((d) => {
       const o = d.orders.find((x) => x.id === id);
       if (!o) fail("Order not found");
+      if (!o!.trackingCode) o!.trackingCode = `TRK-${newId(6).toUpperCase()}`;
+      if (input.trackingCode !== undefined) o!.trackingCode = str(input.trackingCode, 60) || o!.trackingCode;
+      if (input.courierName !== undefined) o!.courierName = str(input.courierName, 60) || undefined;
+      if (input.trackingUrl !== undefined) {
+        const u = str(input.trackingUrl, 300);
+        if (u && !/^https?:\/\//i.test(u)) fail("Tracking URL must start with http:// or https://");
+        o!.trackingUrl = u || undefined;
+      }
       if (input.deliveryPartnerId !== undefined) {
-        if (input.deliveryPartnerId && !d.users.some((u) => u.id === input.deliveryPartnerId && u.role === "delivery")) fail("Not a delivery partner");
-        o.deliveryPartnerId = input.deliveryPartnerId || undefined;
+        const partner = input.deliveryPartnerId ? d.users.find((u) => u.id === input.deliveryPartnerId && u.role === "delivery") : undefined;
+        if (input.deliveryPartnerId && !partner) fail("Not a delivery partner");
+        const changed = o!.deliveryPartnerId !== (input.deliveryPartnerId || undefined);
+        o!.deliveryPartnerId = input.deliveryPartnerId || undefined;
+        if (changed && partner) {
+          const now = Date.now();
+          (o!.trackingLogs ??= []).push({ id: newId(4), title: `Assigned to ${partner.name}`, location: partner.city || o!.address.city, note: `Courier: ${o!.courierName || "Store Delivery"}`, by: me.name, at: now });
+          d.notifications.push({ id: newId(), userId: partner.id, title: `New delivery assigned · ${o!.ref}`, body: `${o!.address.name} · ${o!.address.city} (${o!.items.reduce((s, i) => s + i.qty, 0)} items)`, href: "/delivery", createdAt: now, readBy: [] });
+        }
       }
       if (input.status) {
         if (![...FLOW, "cancelled"].includes(input.status)) fail("Use the return controls for returns");
-        if (!FLOW.includes(o.status) || o.status === "delivered") fail("This order is closed — use the return controls");
-        if (input.status !== "cancelled" && FLOW.indexOf(input.status) < FLOW.indexOf(o.status)) fail("Order status can only move forward");
-        setOrderStatus(d, o, input.status, input.status === "cancelled" ? "Cancelled by the store. Any payment will be refunded." : undefined);
+        if (!FLOW.includes(o!.status) || o!.status === "delivered") fail("This order is closed — use the return controls");
+        if (input.status !== "cancelled" && FLOW.indexOf(input.status) < FLOW.indexOf(o!.status)) fail("Order status can only move forward");
+        setOrderStatus(d, o!, input.status, input.status === "cancelled" ? "Cancelled by the store. Any payment will be refunded." : undefined);
       }
     });
     deliverInBackground();
@@ -364,20 +379,88 @@ export async function sendCampaign(input: { title: string; body: string; href?: 
   });
 }
 
-/* ---------------- Delivery partner ---------------- */
-export async function deliveryUpdate(orderId: string, status: "out_for_delivery" | "delivered") {
+/* ---------------- Delivery partner & tracking ---------------- */
+export async function deliveryUpdate(orderId: string, action: "shipped" | "out_for_delivery" | "delivered" | "attempt_failed", note?: string) {
   return run(async () => {
     const me = await requireUser("delivery");
-    const from: Record<string, OrderStatus> = { out_for_delivery: "shipped", delivered: "out_for_delivery" };
-    if (!from[status]) fail("Invalid status");
+    const cleanNote = str(note, 200);
     await mutate((d) => {
       const o = d.orders.find((x) => x.id === orderId && x.deliveryPartnerId === me.id);
       if (!o) fail("Order not assigned to you");
-      if (o.status !== from[status]) fail(`Order must be ${from[status].replace(/_/g, " ")} first`);
-      setOrderStatus(d, o, status, status === "out_for_delivery" ? `${me.name} is on the way with your order.` : undefined);
+      const now = Date.now();
+      if (action === "attempt_failed") {
+        if (!["shipped", "out_for_delivery"].includes(o!.status)) fail("Order must be in transit to report an attempt");
+        const reason = cleanNote || "Customer not reachable — will re-attempt delivery";
+        (o!.trackingLogs ??= []).push({ id: newId(4), title: "Delivery attempt failed", location: o!.address.city, note: reason, by: me.name, at: now });
+        d.notifications.push({ id: newId(), userId: o!.userId, title: `Delivery attempt · ${o!.ref}`, body: reason, href: `/account/orders/${o!.id}`, createdAt: now, readBy: [] });
+        return;
+      }
+      if (action === "shipped") {
+        if (!["placed", "packed"].includes(o!.status)) fail("Order is already shipped");
+        setOrderStatus(d, o!, "shipped", cleanNote || `Picked up by ${me.name}`);
+      } else if (action === "out_for_delivery") {
+        if (o!.status !== "shipped") fail("Order must be marked picked up / shipped first");
+        setOrderStatus(d, o!, "out_for_delivery", cleanNote || `${me.name} is on the way with your order.`);
+      } else if (action === "delivered") {
+        if (o!.status !== "out_for_delivery") fail("Start delivery (Out for delivery) before marking delivered");
+        setOrderStatus(d, o!, "delivered", cleanNote || `Handed over by ${me.name}`);
+      } else {
+        fail("Invalid status");
+      }
     });
     deliverInBackground();
     revalidatePath("/delivery");
+    revalidatePath("/admin/orders");
+  });
+}
+
+export async function claimDeliveryOrder(orderId: string) {
+  return run(async () => {
+    const me = await requireUser("delivery");
+    await mutate((d) => {
+      const o = d.orders.find((x) => x.id === orderId);
+      if (!o) fail("Order not found");
+      if (o!.deliveryPartnerId) fail("This order is already assigned to a partner");
+      if (!["placed", "packed", "shipped"].includes(o!.status)) fail("This order cannot be claimed");
+      const now = Date.now();
+      o!.deliveryPartnerId = me.id;
+      if (!o!.trackingCode) o!.trackingCode = `TRK-${newId(6).toUpperCase()}`;
+      (o!.trackingLogs ??= []).push({ id: newId(4), title: `Claimed by ${me.name}`, location: me.city || o!.address.city, by: me.name, at: now });
+      d.notifications.push({ id: newId(), userId: o!.userId, title: `Rider assigned · ${o!.ref}`, body: `${me.name} will deliver your order.`, href: `/account/orders/${o!.id}`, createdAt: now, readBy: [] });
+    });
+    revalidatePath("/delivery");
+    revalidatePath("/admin/orders");
+  });
+}
+
+export async function addTrackingCheckpoint(orderId: string, input: { title: string; location?: string; note?: string }) {
+  return run(async () => {
+    const me = await requireUser();
+    if (me.role !== "admin" && me.role !== "delivery") fail("Not allowed");
+    const title = str(input.title, 80);
+    const location = str(input.location, 80);
+    const note = str(input.note, 200);
+    if (title.length < 2) fail("Enter a tracking status title");
+    await mutate((d) => {
+      const o = d.orders.find((x) => x.id === orderId);
+      if (!o) fail("Order not found");
+      if (me.role === "delivery" && o!.deliveryPartnerId !== me.id) fail("Order not assigned to you");
+      const now = Date.now();
+      if (!o!.trackingCode) o!.trackingCode = `TRK-${newId(6).toUpperCase()}`;
+      (o!.trackingLogs ??= []).push({ id: newId(4), title, location: location || undefined, note: note || undefined, by: me.name, at: now });
+      d.notifications.push({
+        id: newId(),
+        userId: o!.userId,
+        title: `Tracking update · ${o!.ref}`,
+        body: `${title}${location ? ` (${location})` : ""}${note ? ` — ${note}` : ""}`,
+        href: `/account/orders/${o!.id}`,
+        createdAt: now,
+        readBy: [],
+      });
+    });
+    revalidatePath("/delivery");
+    revalidatePath("/admin/orders");
+    revalidatePath(`/account/orders/${orderId}`);
   });
 }
 

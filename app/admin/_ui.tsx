@@ -2,13 +2,13 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
-import { BarChart3, Crown, Database, HeartHandshake, Images, LayoutDashboard, Palette, MapPinned, Megaphone, MessageSquare, MoreHorizontal, Package, ShoppingCart, Store, Users, X } from "lucide-react";
+import { BarChart3, Contact, Crown, Database, HeartHandshake, Images, LayoutDashboard, Palette, MapPinned, Megaphone, MessageSquare, MoreHorizontal, Package, ShoppingCart, Store, Users, X } from "lucide-react";
 import { useApp } from "@/components/Providers";
 
 const LINKS = [
   ["/admin", "Dashboard", LayoutDashboard], ["/admin/analytics", "Analytics", BarChart3], ["/admin/products", "Products", Package], ["/admin/orders", "Orders", ShoppingCart],
   ["/admin/customers", "Customers", Users], ["/admin/retention", "Retention", HeartHandshake], ["/admin/membership", "Membership", Crown],
-  ["/admin/delivery", "Delivery", MapPinned], ["/admin/support", "Support", MessageSquare], ["/admin/marketing", "Marketing", Megaphone],
+  ["/admin/delivery", "Delivery", MapPinned], ["/admin/support", "Support", MessageSquare], ["/admin/crm", "CRM", Contact], ["/admin/marketing", "Marketing", Megaphone],
   ["/admin/branding", "Branding", Palette], ["/admin/banners", "Banners", Images], ["/admin/database", "Database", Database],
 ] as const;
 

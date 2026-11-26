@@ -8,6 +8,7 @@ import { brandCss, palette } from "../lib/brand.ts";
 import { hashPassword, verifyPassword } from "../lib/crypto.ts";
 import { buildBlankSeed, buildSeed } from "../lib/seed.ts";
 import { diff, fromSnapshot, snapshotOf, toRows, writePlan } from "../lib/store-diff.ts";
+import { DEFAULT_AUTO_REPLY_RULES, ensureIntegrations, matchAutoReply, phoneDigits, queueAutomation, queueMessage, renderTemplate, whatsappChatId } from "../lib/automation-core.ts";
 
 const lines = [{ price: 500, mrp: 1000, qty: 2 }];
 let t = computeTotals(lines, "standard");
@@ -95,6 +96,41 @@ assert.notEqual(a.secret, b.secret);
     { table: "users", upserts: [row], deletes: [] }, { table: "coin_ledger", upserts: [], deletes: ["c1"] }, { table: "orders", upserts: [row], deletes: [] },
   ]).map((s) => `${s.op}:${s.table}`);
   assert.deepEqual(plan, ["upsert:users", "upsert:products", "upsert:orders", "upsert:reviews", "delete:coin_ledger", "delete:reviews", "delete:products"]);
+}
+// WhatsApp/CRM pure logic: phone normalisation, templates, auto-replies and disabled-by-default automations.
+{
+  assert.equal(phoneDigits("9876543210"), "919876543210");
+  assert.equal(phoneDigits("09876543210"), "919876543210");
+  assert.equal(phoneDigits("+91 98765 43210"), "919876543210");
+  assert.equal(phoneDigits("0091 98765 43210"), "919876543210");
+  assert.equal(phoneDigits("", "91"), "");
+  assert.equal(whatsappChatId("9876543210"), "919876543210@c.us");
+  assert.equal(whatsappChatId(""), "");
+  assert.equal(renderTemplate("Hi {{first}}, {{ unknown }}!", { first: "Aarav" }), "Hi Aarav, !");
+  assert.equal(renderTemplate("{{ name }}", { name: "Threadly" }), "Threadly");
+  assert.equal(matchAutoReply(DEFAULT_AUTO_REPLY_RULES, "What is the PRICE?")?.id, "price");
+  assert.equal(matchAutoReply(DEFAULT_AUTO_REPLY_RULES, "hello"), undefined);
+  assert.equal(matchAutoReply([{ ...DEFAULT_AUTO_REPLY_RULES[0], enabled: false }], "price"), undefined);
+
+  const d = buildSeed();
+  const s = ensureIntegrations(d);
+  assert.equal(s.automations.every((a) => !a.enabled), true); // every automation ships disabled
+  const u = { id: "u-test", name: "Aarav Shah", phone: "9876543210", crm: {} };
+  assert.equal(queueAutomation(d, "welcome", u), null); // disabled → no message
+  ensureIntegrations(d).automations.find((a) => a.key === "welcome")!.enabled = true;
+  const msg = queueAutomation(d, "welcome", u, { link: "https://shop.in" });
+  assert.ok(msg);
+  assert.equal(msg!.status, "queued");
+  assert.match(msg!.body, /^Hi Aarav, welcome/);
+  assert.match(msg!.body, /https:\/\/shop\.in/);
+  assert.equal(d.integrationMessages?.[0]?.id, msg!.id);
+  assert.equal(queueAutomation(d, "welcome", { ...u, crm: { whatsappOptIn: false } }), null);
+  assert.equal(queueAutomation(d, "welcome", { ...u, phone: "" }), null);
+
+  const long = queueMessage(d, { channel: "system", body: "x".repeat(5000) });
+  assert.equal(long.body.length, 4000);
+  for (let i = 0; i < 2005; i++) queueMessage(d, { channel: "system", body: `m${i}` });
+  assert.equal(d.integrationMessages!.length, 2000); // log is capped
 }
 // Password hashing & malformed hash safety
 {
