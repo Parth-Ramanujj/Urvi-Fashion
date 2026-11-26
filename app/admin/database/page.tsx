@@ -43,7 +43,7 @@ export default async function DatabasePage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div><h1 className="font-display text-3xl font-bold">Database</h1><p className="text-sm text-zinc-500">MySQL {s.server} · <b>{s.database}</b> on {s.host} as {s.user} · data version {s.dataVersion}</p></div>
+        <div><h1 className="font-display text-3xl font-bold">Database</h1><p className="text-sm text-zinc-500">{s.server} · <b>{s.database}</b> on {s.host} as {s.user} · data version {s.dataVersion}</p></div>
         {backup}
       </div>
 
